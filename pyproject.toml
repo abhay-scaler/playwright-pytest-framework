@@ -1,0 +1,21 @@
+[tool.black]
+line-length = 100
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+# Deliberately not "strict" yet - the goal of this initial rollout is to
+# actually check the type hints that already exist, incrementally, not to
+# retrofit exhaustive typing across the codebase in one pass. Tighten
+# (disallow_untyped_defs, etc.) module by module as coverage grows.
+python_version = "3.12"
+explicit_package_bases = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true

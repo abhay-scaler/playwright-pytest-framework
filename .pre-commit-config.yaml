@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff
+        args: [--fix]
+  - repo: https://github.com/psf/black
+    rev: 26.5.1
+    hooks:
+      - id: black
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: python -m mypy .
+        language: system
+        pass_filenames: false
+        # Runs against the project's own environment (not an isolated
+        # pre-commit env) so it can resolve playwright/pytest/etc. imports
+        # the same way `python -m mypy .` does locally and in CI.
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]

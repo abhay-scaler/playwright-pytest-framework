@@ -1,0 +1,5 @@
+{
+  "base_url": "",
+  "action_timeout": 10000,
+  "retry_count": 0
+}

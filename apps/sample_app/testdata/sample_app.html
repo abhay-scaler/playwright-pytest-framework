@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sample App</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 2rem; }
+      .card { max-width: 420px; margin: auto; padding: 1.5rem; border: 1px solid #ddd; border-radius: 8px; }
+      input { width: 100%; padding: 0.7rem; margin-bottom: 0.8rem; }
+      button { padding: 0.7rem 1rem; }
+      #message { margin-top: 1rem; font-weight: bold; color: #0a66c2; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>Sample Playwright Form</h2>
+      <input id="name" type="text" placeholder="Enter your name" />
+      <button id="submit" type="button" onclick="document.getElementById('message').textContent = 'Hello, ' + document.getElementById('name').value + '!'">Submit</button>
+      <div id="message"></div>
+    </div>
+  </body>
+</html>

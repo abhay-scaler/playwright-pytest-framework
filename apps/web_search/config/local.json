@@ -1,0 +1,6 @@
+{
+  "base_url": "https://playwright.dev/",
+  "action_timeout": 15000,
+  "retry_count": 1,
+  "consent_selector": null
+}
