@@ -14,7 +14,7 @@ for the framework itself, and this guide links to them rather than restating the
 |---|---|
 | [getting-started.md](getting-started.md) | you have never used this process before |
 | [workflow.md](workflow.md) | you want the stage-by-stage contract: inputs, outputs, owners, done |
-| [scenario-authoring.md](scenario-authoring.md) | you are writing or reviewing scenarios |
+| [scenario-authoring.md](scenario-authoring.md) | you are writing or reviewing scenarios, or need the catalog's schema, rules and validation command |
 | [codegen-to-page-objects.md](codegen-to-page-objects.md) | you have a recording and need maintainable code |
 | [review-checklist.md](review-checklist.md) | you are reviewing anything an assistant produced |
 | [troubleshooting.md](troubleshooting.md) | something failed and you need to classify it |
@@ -45,9 +45,10 @@ Three properties hold at every stage, and everything else here follows from them
 - **Prompt text is not an enforcement mechanism.** The things that actually enforce anything in
   this repository are executable: Ruff, Black and mypy; `--strict-markers`; the `-m "not
   production"` exclusion on every pytest invocation in CI, guarded by
-  [tests/test_ci_production_exclusion.py](../../tests/test_ci_production_exclusion.py); and human
-  review. A rule that lives only in a prompt is a convention, and conventions are broken by
-  accident.
+  [tests/test_ci_production_exclusion.py](../../tests/test_ci_production_exclusion.py);
+  `python -m ai_testing.validate_catalog`, which refuses a catalog whose statuses, approval
+  records and test mappings do not line up; and human review. A rule that lives only in a
+  prompt is a convention, and conventions are broken by accident.
 
 ## Production safety
 
@@ -83,10 +84,10 @@ These are genuinely undecided. Do not let an assistant close one by picking a de
    ([DESIGN.md](../../DESIGN.md) §6 records why). The end-to-end pilot therefore needs either a
    local fixture application in the shape of `apps/sample_app/`, or a site published for
    automation practice. Until this is chosen, no live-site test is a gate.
-2. **Whether a scenario catalog lands in the repository at all**, or whether an existing
-   test-management system stays authoritative. The planned location is
-   `apps/<app>/scenarios/<feature>.yaml` — inside the application package, so an app stays
-   self-contained. A parallel top-level catalog directory is explicitly not the plan.
+2. **Whether an external test-management system should stay authoritative** instead of the
+   in-repository catalog. The catalog now lives at `apps/<app>/scenarios/<feature>.yaml`,
+   inside the application package so an app stays self-contained; if the organization already
+   has a system of record, this becomes a mirror of it rather than the source of truth.
 3. **Which assistants are approved** for use with this repository, and what data may be sent to
    them.
 4. **Whether orchestration is worth building** — see
@@ -98,9 +99,7 @@ These are genuinely undecided. Do not let an assistant close one by picking a de
 
 | Thing | Status |
 |---|---|
-| Scenario JSON Schema and validation | planned, PR 2 |
-| `apps/<app>/scenarios/` catalog directory | planned, PR 2 |
-| `scenario(id)` marker and report label for traceability | planned, PR 2 — today traceability is a docstring and the `automation.test` field |
+| Validation tooling for work-item artifacts and failure reports | planned, PR 4 |
 | Validation tooling and artifact organization | planned, PR 4 |
 | CLI, LLM provider interface, orchestration | planned at the earliest, PR 5, and only against the evidence listed in `workflow.md` |
 | Authentication, test-data factories | framework-level absences, documented in [README.md § Known Limitations](../../README.md#known-limitations) |

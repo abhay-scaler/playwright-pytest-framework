@@ -222,6 +222,16 @@ def _tag_allure_application(request):
     allure.dynamic.label("application", _app_name(request))
     allure.dynamic.label("browser", BROWSER_NAME)
     allure.dynamic.label("environment", ENVIRONMENT)
+    # Catalog scenario ids, from @pytest.mark.scenario("<id>"), as a label so a
+    # report row can be traced back to the scenario it implements. De-duplicated
+    # because a test may carry the marker more than once (one test may cover
+    # several scenarios) and Allure would otherwise show the same label twice.
+    seen = set()
+    for marker in request.node.iter_markers("scenario"):
+        for scenario_id in marker.args:
+            if scenario_id not in seen:
+                seen.add(scenario_id)
+                allure.dynamic.label("scenario", scenario_id)
     yield
 
 

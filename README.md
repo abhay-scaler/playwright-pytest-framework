@@ -96,6 +96,7 @@ apps/<app_name>/            # everything specific to one application
   pages/                     #   page objects — actions and state queries only, no assertions
   locators/                  #   selectors as plain data, isolated from page-object logic
   testdata/                  #   static fixtures, where an app needs one
+  scenarios/                 #   approved scenario catalog (YAML), validated in CI
 
 core/
   base_page.py               # shared Playwright actions every page object inherits
@@ -122,6 +123,7 @@ conftest.py                   # browser/context/page fixtures, failure capture, 
 pytest.ini                    # test discovery, markers, default CLI options
 pyproject.toml                # Ruff / Black / mypy configuration
 requirements.in / .txt        # loose source and fully-pinned lock file
+requirements-ai.in / .txt     # scenario-validator deps only, kept out of the test runtime
 .github/workflows/ci.yml      # CI pipeline
 DESIGN.md                     # full architecture, execution flow, and onboarding walkthrough
 docs/ai-testing/              # optional AI-assisted test engineering workflow (documentation)
@@ -256,7 +258,8 @@ pytest tests/test_*.py -q
 
 Registered markers (`pytest.ini`): `smoke`, `ui`, `api`, `regression` (reserved for future use —
 currently no test carries it), `production` (drives a live third-party site; excluded from every
-CI job, opt in locally as above), and an auto-applied `app(name)` marker `conftest.py` assigns
+CI job, opt in locally as above), `scenario(id)` (the catalog scenario a test implements, also
+attached as an Allure label), and an auto-applied `app(name)` marker `conftest.py` assigns
 based on each test's file path.
 
 ## Reporting and Failure Diagnostics
@@ -334,15 +337,17 @@ detect-secrets scan --baseline .secrets.baseline
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs as four jobs rather than one, so a pull request gets fast feedback
+`.github/workflows/ci.yml` runs as five jobs rather than one, so a pull request gets fast feedback
 without giving up full-suite and cross-browser coverage:
 
 1. **Lint & Type Check** — Ruff, Black, mypy. Every trigger, before any job installs a browser.
-2. **PR Smoke** — framework self-tests plus `-m "smoke and not production"`, Chromium only.
+2. **Scenario Catalog** — `python -m ai_testing.validate_catalog`. Every trigger; static
+   analysis, no pytest and no browser.
+3. **PR Smoke** — framework self-tests plus `-m "smoke and not production"`, Chromium only.
    Pull requests only, kept deliberately fast.
-3. **Regression** — the full suite, Chromium, `-n auto`. Push to `main`/`dev`, nightly schedule,
+4. **Regression** — the full suite, Chromium, `-n auto`. Push to `main`/`dev`, nightly schedule,
    and manual dispatch.
-4. **Cross-Browser** — the full suite against Firefox and WebKit. Nightly, or on demand via
+5. **Cross-Browser** — the full suite against Firefox and WebKit. Nightly, or on demand via
    `workflow_dispatch` — not on every PR, since it roughly triples runtime.
 
 Every pytest invocation in the workflow carries `-m "not production"`, so tests that drive a

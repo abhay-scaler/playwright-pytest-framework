@@ -39,6 +39,26 @@ jobs:
       - name: mypy
         run: mypy .
 
+  # Scenario catalog + traceability. Its own job because it is the only thing
+  # that needs requirements-ai.txt (PyYAML + jsonschema): installing those in
+  # the test jobs would put them in every browser job's dependency path for no
+  # reason. Static analysis only - no pytest, no browser, no network - so it
+  # needs no Playwright install and runs in seconds.
+  scenario-catalog:
+    name: Scenario Catalog
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-ai.txt
+      - name: Install validation dependencies
+        run: pip install -r requirements-ai.txt
+      - name: Validate scenario catalogs and test mappings
+        run: python -m ai_testing.validate_catalog
+
   # PR gate. Deliberately narrow: framework self-tests (fast, no browser) +
   # the smoke suite (Chromium only). Keeps PR feedback quick; full coverage
   # runs on merge and nightly instead.

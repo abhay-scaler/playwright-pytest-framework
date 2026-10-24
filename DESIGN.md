@@ -76,6 +76,8 @@ apps/
       home_page.py
     locators/
       home_page_locators.py
+    scenarios/
+      shopping_journey.yaml    #   scenario catalog, schema-validated in CI (§11)
 
 core/
   base_page.py                 # shared Playwright actions used by every page object
@@ -102,6 +104,7 @@ pytest.ini                     # test discovery, markers, default CLI options
 pyproject.toml                 # Ruff/Black/mypy config
 requirements.in                # loose, human-maintained dependency source
 requirements.txt               # generated, fully-pinned lock file - install from this
+requirements-ai.in / .txt      # scenario-validator deps only, outside the test runtime (§11)
 .pre-commit-config.yaml        # ruff, black, mypy, detect-secrets
 .secrets.baseline              # detect-secrets baseline (known-safe matches, e.g. docs examples)
 .github/workflows/ci.yml       # CI pipeline: lint/type-check, PR smoke, regression, cross-browser
@@ -367,18 +370,22 @@ tell which worker produced which line.
 
 ## 8. CI/CD Flow
 
-GitHub Actions (`.github/workflows/ci.yml`) runs as four jobs rather than one, so a PR gets fast
+GitHub Actions (`.github/workflows/ci.yml`) runs as five jobs rather than one, so a PR gets fast
 feedback without giving up full-suite and cross-browser coverage:
 
 1. **Lint & Type Check** — `ruff check .`, `black --check .`, `mypy .`. Runs on every trigger
    (push, PR, schedule, manual dispatch), before any job installs a browser, so a lint/type error
    fails in seconds rather than after a multi-minute Playwright install.
-2. **PR Smoke** (`pull_request` only) — the framework's own tests (`tests/test_*.py`, fast, no
+2. **Scenario Catalog** — `python -m ai_testing.validate_catalog`, installing only
+   `requirements-ai.txt` (PyYAML + jsonschema). Every trigger. No pytest, no browser, no
+   network, so it needs no Playwright install and finishes in seconds; it is also the only job
+   that installs anything outside the test-runtime lock (§11).
+3. **PR Smoke** (`pull_request` only) — the framework's own tests (`tests/test_*.py`, fast, no
    browser) plus `-m "smoke and not production"`, Chromium only. Deliberately narrow: full
    regression coverage belongs to the jobs below, not to every PR.
-3. **Regression** (push to `main`/`dev`, nightly, manual dispatch) — the full suite, Chromium,
+4. **Regression** (push to `main`/`dev`, nightly, manual dispatch) — the full suite, Chromium,
    `pytest -m "not production" -n auto`.
-4. **Cross-Browser** (nightly, or manual dispatch with the `cross_browser` input) — the full suite
+5. **Cross-Browser** (nightly, or manual dispatch with the `cross_browser` input) — the full suite
    against Firefox and WebKit, as a matrix. Not run on every PR — it roughly triples runtime for
    coverage most changes don't need.
 
@@ -626,9 +633,38 @@ process:
   no code reads is documentation, never a safety control.
 
 Work in progress — drafts, recordings, exploration evidence — lives in `artifacts/ai-work/`,
-which is git-ignored. The scenario catalog, its JSON Schema, a scenario-id marker for
-traceability, and any CLI or LLM orchestration are **not implemented**; they are later,
-separate decisions, and `docs/ai-testing/README.md` records which is which.
+which is git-ignored.
+
+### The scenario catalog
+
+Approved scenarios are committed per application, at `apps/<app>/scenarios/<feature>.yaml`, so an
+application stays self-contained (§1) — there is deliberately no top-level catalog tree. They
+are a design and traceability record: nothing in the test runtime reads them, and the executable
+truth is always the test named in a scenario's `automation.test`.
+
+- **Schema**: `ai_testing/schemas/scenario.schema.json`, JSON Schema 2020-12, versioned
+  (`schema_version: "1.0"`). Unknown keys are rejected, so a misspelled field fails instead of
+  being silently ignored — the same failure mode `AppConfig.extra` has for configuration (§6),
+  avoided here deliberately.
+- **Validation**: `python -m ai_testing.validate_catalog` — schema, id uniqueness across every
+  catalog, the lifecycle rules, and the scenario-to-test mappings in both directions. Static
+  analysis: it parses YAML and reads `tests/` as an AST, never importing a test, starting a
+  browser or opening a socket. CI runs it in its own `Scenario Catalog` job (§8).
+- **Traceability**: the implementing test carries `@pytest.mark.scenario("<id>")` — registered
+  in `pytest.ini` like every other marker — and the root `conftest.py` attaches each id as an
+  Allure label named `scenario`, beside `application`, `browser` and `environment`. One scenario
+  is implemented by exactly one test; one test may cover several scenarios.
+- **Dependencies**: the validator needs PyYAML and jsonschema, pinned in `requirements-ai.txt`
+  and deliberately **not** in the test-runtime lock that every test job installs. It imports
+  them lazily, and `tests/test_scenario_catalog.py` skips when they are absent.
+- **What it cannot enforce**: that a recorded approval is genuine. `review.approved_by` plus
+  `approved_date` are required from `APPROVED` onwards, and `ACTIVE_REGRESSION` additionally
+  requires `ci_eligible: true` and no `production` marker — but a name and a date in YAML are
+  only as true as the review behind them. The checks make skipping review visible, not
+  impossible; that part stays human, as does merging.
+
+A CLI or LLM orchestration is still **not implemented** and remains a separate, later decision;
+`docs/ai-testing/README.md` records what is built and what is not.
 
 ## Adding a New Application
 

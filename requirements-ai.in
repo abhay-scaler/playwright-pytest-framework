@@ -1,0 +1,12 @@
+# Dependencies for the AI test engineering toolkit's own validation command
+# (python -m ai_testing.validate_catalog). Deliberately separate from
+# requirements.in: every CI job installs the test-runtime lock
+# (requirements.txt), so anything added there is installed by the lint job and
+# the nightly cross-browser sweep alike. Nothing in the browser test runtime
+# imports these, and no test requires them to run - the catalog self-tests skip
+# when they are absent.
+#
+# Regenerate the pinned lock with the same tool the test-runtime lock uses:
+#   pip-compile --no-index --output-file=requirements-ai.txt --strip-extras requirements-ai.in
+pyyaml>=6.0
+jsonschema>=4.21

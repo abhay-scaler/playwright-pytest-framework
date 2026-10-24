@@ -1,0 +1,209 @@
+# Myntra shopping journey - scenario catalog.
+#
+# Validated by `python -m ai_testing.validate_catalog` against
+# ai_testing/schemas/scenario.schema.json. Nothing in the test runtime reads
+# this file: it is a design and traceability record, and the executable truth is
+# always the test named in `automation.test`.
+#
+# STATUS OF THE CONTENT: only MNY-HOME-001 describes behaviour backed by
+# evidence - the markup https://www.myntra.com/ served on 2026-10-24, from which
+# this app's locators were read. Even that scenario has NOT been executed
+# against the live site, and it is awaiting human review, not approved. The
+# other three scenarios are ILLUSTRATIVE: they show the shape a reviewed
+# scenario takes and are explicitly not verified Myntra behaviour. Nothing here
+# may be promoted past NEEDS_HUMAN_REVIEW by anyone other than a person who has
+# confirmed the expected results against a feature brief.
+#
+# Every scenario here targets a live third-party production site, so all of them
+# are ci_eligible: false and carry the `production` marker - which is what keeps
+# them out of every CI run (DESIGN.md section 8).
+
+schema_version: "1.0"
+
+meta:
+  app: myntra
+  feature: shopping_journey
+  brief: null                                  # no feature brief written yet
+  owner: "QA automation (unassigned)"
+  updated: "2026-10-24"
+  id_scheme: "MNY-<AREA>-<NNN>"
+
+scenarios:
+  - id: MNY-HOME-001
+    title: The homepage renders its own header search bar
+    feature: shopping_journey
+    priority: P1
+    risk: high
+    status: NEEDS_HUMAN_REVIEW
+    requirement: "FB-SHOP-00 (entry point of the journey; brief not yet written)"
+    preconditions:
+      - The site is reachable from the machine running the test
+    test_data:
+      source: no test data required
+    steps:
+      - Open the homepage at the application's configured base_url
+    expected_results:
+      - The page title contains "Myntra" (case-insensitive)
+      - The header search bar is present, which an error or bot-challenge page does not render
+    environment:
+      target: live-production
+      side_effects: none
+      side_effects_note: A page view only; nothing is created, changed or submitted.
+      authorization_required: true
+      ci_eligible: false
+    automation:
+      test: tests/myntra/smoke/test_myntra_homepage.py::test_home_page_loads_successfully
+      markers: [smoke, ui, production]
+      implemented: true
+    evidence:
+      locators: apps/myntra/locators/home_page_locators.py
+      exploration: null
+    review:
+      approved_by: null
+      approved_date: null
+      status_history:
+        - status: DRAFT
+          by: assistant
+          date: "2026-10-24"
+          note: Written to describe the test added in the production-isolation change.
+        - status: NEEDS_HUMAN_REVIEW
+          by: assistant
+          date: "2026-10-24"
+          note: >-
+            Expectations derive from served markup, not from a brief or a live browser run.
+            A human must confirm them before this is APPROVED.
+      blocking_questions:
+        - "Is the header search bar the right health signal for the homepage, or is something else expected? [?]"
+
+  - id: MNY-SRCH-001
+    title: A product search returns results matching the search term
+    feature: shopping_journey
+    priority: P1
+    risk: high
+    status: DRAFT
+    requirement: "FB-SHOP-01 (illustrative; no brief exists yet)"
+    preconditions:
+      - The homepage is open and its header search bar is present
+    test_data:
+      source: inline constant, pending a decision on runtime resolution
+      search_term: "running shoes"             # [A] assumed always to have results
+    steps:
+      - Enter the search term in the header search bar
+      - Submit the search
+    expected_results:
+      - The results page shows at least one product                        # [A] not confirmed
+      - Each visible product's title or brand relates to the search term   # [?] exact rule unknown
+    environment:
+      target: live-production
+      side_effects: none
+      side_effects_note: null
+      authorization_required: true
+      ci_eligible: false
+    automation:
+      test: null
+      markers: [ui, production]
+      implemented: false
+    evidence:
+      locators: null
+      exploration: null
+    review:
+      approved_by: null
+      approved_date: null
+      status_history:
+        - status: DRAFT
+          by: assistant
+          date: "2026-10-24"
+          note: Illustrative. Expectations are assumptions and must not be implemented as-is.
+      blocking_questions:
+        - "What exactly must match - title, brand, category, or a relevance ranking? [?]"
+        - "Is a zero-result search for a valid term a defect or acceptable? [?]"
+
+  - id: MNY-PDP-001
+    title: A product detail page shows the product's name, brand and price
+    feature: shopping_journey
+    priority: P2
+    risk: medium
+    status: DRAFT
+    requirement: "FB-SHOP-02 (illustrative; no brief exists yet)"
+    preconditions:
+      - A search results page is open with at least one product
+    test_data:
+      source: resolved at runtime from the first search result
+    steps:
+      - Open the first product in the results
+    expected_results:
+      - The detail page shows a product name, a brand and a price   # [A] fields not confirmed
+    environment:
+      target: live-production
+      side_effects: none
+      side_effects_note: null
+      authorization_required: true
+      ci_eligible: false
+    automation:
+      test: null
+      markers: [ui, production]
+      implemented: false
+    evidence:
+      locators: null
+      exploration: null
+    review:
+      approved_by: null
+      approved_date: null
+      status_history:
+        - status: DRAFT
+          by: assistant
+          date: "2026-10-24"
+          note: Illustrative. Price and availability are volatile and must never be hard-coded.
+      blocking_questions:
+        - "Which fields are actually required to be present, and what should an out-of-stock product show? [?]"
+
+  - id: MNY-BAG-001
+    title: A product added to the bag appears in the bag with the selected size
+    feature: shopping_journey
+    priority: P1
+    risk: high
+    status: NEEDS_CLARIFICATION
+    requirement: "FB-SHOP-04 (illustrative; no brief exists yet)"
+    preconditions:
+      - A product detail page is open for an in-stock product
+      - At least one size is selectable
+    test_data:
+      source: resolved at runtime; never a hard-coded product id, since inventory changes
+      size: first available
+    steps:
+      - Select an available size
+      - Add the product to the bag
+      - Open the bag
+    expected_results:
+      - The bag contains the product that was added, with the selected size   # [A]
+    environment:
+      target: live-production
+      side_effects: session-state
+      side_effects_note: >-
+        Adding to a bag mutates session state on a live site. Cleanup is undecided, which is
+        why this scenario is NEEDS_CLARIFICATION rather than DRAFT.
+      authorization_required: true
+      ci_eligible: false
+    automation:
+      test: null
+      markers: [ui, production]
+      implemented: false
+    evidence:
+      locators: null
+      exploration: null
+    review:
+      approved_by: null
+      approved_date: null
+      status_history:
+        - status: DRAFT
+          by: assistant
+          date: "2026-10-24"
+        - status: NEEDS_CLARIFICATION
+          by: assistant
+          date: "2026-10-24"
+          note: >-
+            Mutating state on someone else's production site needs explicit authorization and a
+            cleanup answer, or a sanctioned target instead. A human decides this.
+      blocking_questions:
+        - "Is mutating bag state on the live site authorized, and how is it cleaned up? [?]"
+        - "Should this scenario move to the sanctioned CI pilot target once one is chosen? [?]"
