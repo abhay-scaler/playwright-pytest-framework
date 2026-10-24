@@ -775,8 +775,11 @@ nothing in `pwpf/` may assume the framework sits at the root of the project unde
   labels, and marker registration. `[project.entry-points.pytest11]` makes pytest load it on
   installation, so a consumer gets all of it with no `conftest.py` of its own. This repository
   loads the same module through a one-line `pytest_plugins` in its root `conftest.py`, so the
-  suite exercises exactly the code a consumer runs; pytest registers a plugin module once, so
-  the two routes cannot double-register it.
+  suite exercises exactly the code a consumer runs. The entry point is named `pwpf.plugin`, the
+  module's own name, because pytest skips importing a plugin whose name is already registered
+  while pluggy refuses the same module under a second name: an entry point called `pwpf` plus
+  that `pytest_plugins` line aborts the session with "Plugin already registered under a
+  different name" wherever the distribution is installed. The two names must stay in step.
 - **Markers come from the plugin.** It registers `smoke`, `ui`, `api`, `regression`,
   `production`, `quarantined`, `scenario(id)` and `app(name)` in `pytest_configure`, so
   `--strict-markers` works in a consumer that declares none of them. This repository keeps its

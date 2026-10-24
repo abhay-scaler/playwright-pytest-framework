@@ -9,8 +9,10 @@ names kept in the framework.
 
 This repository loads the same module through `pytest_plugins` in its root
 conftest.py, so it runs against the source tree exactly as a consumer runs
-it against the installed wheel. pytest registers a module once, so the two
-routes cannot double-register it.
+it against the installed wheel. Both routes name it `pwpf.plugin` - the entry
+point shares the module's name deliberately - so pytest finds that name
+already registered and skips the second import. Registering one module under
+two names is an error, which is why the two names must stay in step.
 """
 
 import time

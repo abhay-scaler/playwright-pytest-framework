@@ -52,8 +52,16 @@ dev = [
 # Installing the distribution is all a consumer needs: pytest discovers the
 # plugin through this entry point, so the fixtures, markers and artifact
 # handling arrive without a conftest.py.
+#
+# The entry point is named after the module on purpose. pytest skips importing
+# a plugin whose *name* is already registered, but pluggy refuses the same
+# module object under a second name - so an entry point called `pwpf` plus this
+# repository's `pytest_plugins = ["pwpf.plugin"]` would abort the session with
+# "Plugin already registered under a different name" in any environment where
+# the distribution is installed. Matching the two names makes the second load a
+# no-op instead.
 [project.entry-points.pytest11]
-pwpf = "pwpf.plugin"
+"pwpf.plugin" = "pwpf.plugin"
 
 [project.scripts]
 pwpf-validate-catalog = "pwpf.ai_testing.validate_catalog:main"
