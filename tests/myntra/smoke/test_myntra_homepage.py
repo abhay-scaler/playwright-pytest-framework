@@ -10,8 +10,13 @@ from apps.myntra.pages.home_page import HomePage
 @pytest.mark.smoke
 @pytest.mark.ui
 @pytest.mark.production
+@pytest.mark.scenario("MNY-HOME-001")
 def test_home_page_loads_successfully(page, app_config):
     """Myntra's homepage renders its own header search bar.
+
+    Implements MNY-HOME-001 in apps/myntra/scenarios/shopping_journey.yaml, which is
+    awaiting human review - the scenario is not approved, and the mapping is checked by
+    `python -m ai_testing.validate_catalog`.
 
     `production`-marked: this drives a live third-party site, so it never runs in
     CI (see .github/workflows/ci.yml) and is opt-in locally with `-m production`.

@@ -15,8 +15,15 @@ AI-assisted work goes wrong, because the claims are always fluent.
 - [ ] No expected result was derived from the application's current behaviour.
 - [ ] Inferences are labelled `[A]`, open questions `[?]`; neither is hiding in prose.
 - [ ] Ids follow the scheme, are unique, and nothing was renumbered.
+- [ ] `python -m ai_testing.validate_catalog` passes, with its real output shown — schema,
+      lifecycle rules, id uniqueness and test mappings.
+- [ ] Any new or changed catalog file sits in `apps/<app>/scenarios/`, with `meta.app` and
+      `meta.feature` matching.
 - [ ] Status is honest: nothing `APPROVED` that a human did not approve, nothing
-      `ACTIVE_REGRESSION` without a deliberate decision.
+      `ACTIVE_REGRESSION` without a deliberate decision. `review.approved_by` names a real
+      person who really confirmed the expected results — the validator checks the field is
+      filled, not that the review happened.
+- [ ] `review.status_history` records the transition, with who and when.
 - [ ] Volatile data (price, stock, promotion, product id, result count) is resolved at runtime,
       not hard-coded.
 - [ ] `environment.side_effects` is accurate, with a cleanup answer where it is not `none`.
@@ -60,6 +67,8 @@ AI-assisted work goes wrong, because the claims are always fluent.
       suite.
 - [ ] Markers correct: `ui`/`api` as applicable, `smoke` if it belongs in the gate, `production`
       on every live-site test. Markers select suites; folders do not.
+- [ ] `@pytest.mark.scenario("<id>")` present and matching the catalog's `automation.test`,
+      so the Allure `scenario` label traces a report row back to the catalog.
 
 ## Static checks
 

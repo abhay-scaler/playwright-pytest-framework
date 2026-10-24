@@ -36,7 +36,9 @@ explicit about what is assumed. This produces a design artifact, not tests, and 
 
 ## Output format
 
-Valid YAML in the template's shape, saved as `<work-item>/scenarios-draft.yaml`, plus a short
+Valid YAML in the template's shape (and the schema's: `ai_testing/schemas/scenario.schema.json`,
+`schema_version: "1.0"`), saved as `<work-item>/scenarios-draft.yaml` — a draft stays in the
+work item directory, not under `apps/*/scenarios/`, until a human approves it. Plus a short
 Markdown note `<work-item>/scenarios-rationale.md` covering: risk ordering, what you chose not to
 cover and why, and every `[A]`/`[?]` in one list.
 

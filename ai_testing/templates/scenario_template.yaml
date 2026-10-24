@@ -5,16 +5,21 @@
 # a design record that a human approves, and the executable truth is always the Pytest test named
 # under `automation.test`.
 #
-# SCHEMA VALIDATION IS PR 2 WORK. Until then a reviewer, not a tool, checks these fields; a typo
-# in a key is silently ignored by everything.
+# VALIDATION: `python -m ai_testing.validate_catalog` checks every committed catalog against
+# ai_testing/schemas/scenario.schema.json plus the lifecycle rules in
+# docs/ai-testing/scenario-authoring.md. Unknown keys are rejected, so a misspelling fails
+# rather than being silently ignored. This template is not itself a catalog file and is not
+# validated: it lives outside apps/*/scenarios/ and its examples would not pass the
+# lifecycle rules unchanged.
 #
 # EVERY VALUE BELOW IS ILLUSTRATIVE. The two scenarios are worked examples showing the shape and
 # the labelling, not verified Myntra behaviour: `[A]` marks an assumption and `[?]` an open
 # question, exactly as in `ai_testing/README.md` § House rules. Do not copy an expected result
 # from here into a real catalog.
 #
-# WHERE IT WILL LIVE: `apps/<app>/scenarios/<feature>.yaml`, so an application stays
-# self-contained (DESIGN.md §1). PR 2 introduces the directory; PR 1 only defines the shape.
+# WHERE IT LIVES: `apps/<app>/scenarios/<feature>.yaml`, so an application stays
+# self-contained (DESIGN.md §1). A committed example:
+# apps/myntra/scenarios/shopping_journey.yaml.
 
 meta:
   app: myntra                                  # must match an existing apps/<app>/ package

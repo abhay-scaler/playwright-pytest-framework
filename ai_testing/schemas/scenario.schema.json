@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/abhay-scaler/playwright-pytest-framework/ai_testing/schemas/scenario.schema.json",
+  "title": "Scenario catalog, schema version 1.0",
+  "description": "Structure of apps/<app>/scenarios/<feature>.yaml. Validated by `python -m ai_testing.validate_catalog`; nothing in the test runtime reads these files. Cross-field rules (status implies approval record, live-production implies the production marker, ACTIVE_REGRESSION implies CI eligibility) are enforced by the validator, not here, so that each violation can name the rule it broke - see docs/ai-testing/scenario-authoring.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "meta", "scenarios"],
+  "properties": {
+    "schema_version": {
+      "description": "Version of this schema the file targets. A backwards-incompatible change ships as a new file (scenario.schema.v2.json) and a new accepted value, so old catalogs keep validating until they are migrated.",
+      "enum": ["1.0"]
+    },
+    "meta": { "$ref": "#/$defs/meta" },
+    "scenarios": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/scenario" }
+    }
+  },
+  "$defs": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app", "feature", "owner", "updated"],
+      "properties": {
+        "app": {
+          "description": "Must match the apps/<app>/ package this catalog lives in.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "feature": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "owner": { "type": "string", "minLength": 2 },
+        "updated": { "$ref": "#/$defs/date" },
+        "brief": {
+          "description": "Path to the feature brief the scenarios were derived from, or null while it lives only in a work item directory.",
+          "type": ["string", "null"]
+        },
+        "id_scheme": { "type": "string", "minLength": 3 }
+      }
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "status": {
+      "enum": [
+        "DRAFT",
+        "AI_REVIEWED",
+        "NEEDS_HUMAN_REVIEW",
+        "NEEDS_CLARIFICATION",
+        "APPROVED",
+        "IMPLEMENTED",
+        "VALIDATED",
+        "ACTIVE_REGRESSION",
+        "BLOCKED",
+        "QUARANTINED",
+        "DEPRECATED"
+      ]
+    },
+    "step": { "type": "string", "minLength": 3, "maxLength": 300 },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "feature",
+        "priority",
+        "risk",
+        "status",
+        "requirement",
+        "preconditions",
+        "test_data",
+        "steps",
+        "expected_results",
+        "environment",
+        "automation",
+        "review"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable forever: never renumbered, never reused.",
+          "type": "string",
+          "pattern": "^[A-Z]{2,5}-[A-Z]{2,6}-[0-9]{3}$"
+        },
+        "title": {
+          "description": "Names the outcome, not the clicks.",
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 160
+        },
+        "feature": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "priority": { "enum": ["P0", "P1", "P2", "P3"] },
+        "risk": {
+          "description": "Business impact if the behaviour breaks - not how hard the test is to write.",
+          "enum": ["low", "medium", "high"]
+        },
+        "status": { "$ref": "#/$defs/status" },
+        "requirement": {
+          "description": "A heading in the feature brief, or a ticket id.",
+          "type": "string",
+          "minLength": 2
+        },
+        "preconditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "test_data": {
+          "description": "The one object that accepts extra keys, because the data a scenario needs is scenario-specific. `source` is required so a reviewer can tell a runtime lookup from a hard-coded value.",
+          "type": "object",
+          "required": ["source"],
+          "properties": {
+            "source": { "type": "string", "minLength": 2 }
+          },
+          "additionalProperties": {
+            "type": ["string", "number", "boolean", "null"]
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "expected_results": {
+          "description": "Each entry must be able to fail.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["target", "side_effects", "authorization_required", "ci_eligible"],
+          "properties": {
+            "target": {
+              "enum": ["local-fixture", "sanctioned-practice", "live-production"]
+            },
+            "side_effects": { "enum": ["none", "session-state", "server-state"] },
+            "side_effects_note": { "type": ["string", "null"] },
+            "authorization_required": { "type": "boolean" },
+            "ci_eligible": {
+              "description": "False for every live third-party target: such a test can never be a CI gate.",
+              "type": "boolean"
+            }
+          }
+        },
+        "automation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["test", "markers", "implemented"],
+          "properties": {
+            "test": {
+              "description": "Pytest node id of the implementing test, without parameters: tests/<app>/<suite>/<module>.py::<function>.",
+              "type": ["string", "null"],
+              "pattern": "^tests/[A-Za-z0-9_./-]+\\.py::[A-Za-z0-9_]+$"
+            },
+            "markers": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z_]+$" }
+            },
+            "implemented": { "type": "boolean" }
+          }
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "locators": { "type": ["string", "null"] },
+            "exploration": { "type": ["string", "null"] }
+          }
+        },
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status_history"],
+          "properties": {
+            "approved_by": {
+              "description": "The person who confirmed the expected results. Required from APPROVED onwards; an assistant may never fill this in.",
+              "type": ["string", "null"]
+            },
+            "approved_date": {
+              "oneOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }]
+            },
+            "status_history": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["status", "by", "date"],
+                "properties": {
+                  "status": { "$ref": "#/$defs/status" },
+                  "by": { "type": "string", "minLength": 2 },
+                  "date": { "$ref": "#/$defs/date" },
+                  "note": { "type": "string" }
+                }
+              }
+            },
+            "blocking_questions": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 5 }
+            }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

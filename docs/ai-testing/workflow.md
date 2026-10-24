@@ -16,11 +16,11 @@ the decision. Where both appear, the assistant drafts and the human decides.
 | 2 | Feature brief | **human** | the requirement, the business rules | `feature-brief.md` | every section answered or explicitly "unknown"; scope and target stated |
 | 3 | Scenario generation | assistant (01) | brief, repo analysis | `scenarios-draft.yaml` + rationale | every scenario traces to a brief rule; inferences labelled `[A]`; status `DRAFT` |
 | 4 | Independent scenario review | assistant (02), fresh context | brief, draft | `scenario-review.md`, `scenarios-reviewed.yaml` | findings each name an id and an action; decisions list is answerable; status `AI_REVIEWED` |
-| 5 | Human approval | **human** | review + draft | approved scenarios | every expected result confirmed by a person; `[?]` resolved or scenario parked; `APPROVED` recorded with name and date |
+| 5 | Human approval | **human** | review + draft | approved scenarios, committed to `apps/<app>/scenarios/` | every expected result confirmed by a person; `[?]` resolved or scenario parked; `APPROVED` recorded with `review.approved_by` and `approved_date`, which the validator requires |
 | 6 | Browser exploration | assistant plans (03), **human runs** | approved scenarios | `exploration-plan.md`, recording, notes, screenshots | plan's observations captured, or the session's stop reason recorded |
 | 7 | Codegen evidence analysis | assistant (04) | recording and notes | `action-map.md`, `locator-evidence.md` | every recorded line classified; missing assertions and unverified steps listed; locators carry quoted evidence |
 | 8 | Page-object and component design | assistant (05) | evidence, approved scenarios | locators, page objects, fixtures, config | selectors cite evidence; no assertion or literal in a page object; Ruff/Black/mypy clean with real output |
-| 9 | Pytest implementation | assistant (06) | page objects, scenarios | tests under `tests/<app>/` | one test per scenario asserting every expected result; markers correct; unique module basename; collection output shown |
+| 9 | Pytest implementation | assistant (06) | page objects, scenarios | tests under `tests/<app>/`, catalog `automation` fields filled in | one test per scenario asserting every expected result; markers correct, including `scenario(<id>)`; unique module basename; collection output and `validate_catalog` both clean |
 | 10 | Static and runtime validation | assistant runs, **human reads** | the diff | command output | the commands below actually ran, output pasted, failures included |
 | 11 | Human review and merge | **human** (assistant pre-reviews with 07) | diff, evidence, output | merged change | checklist passed; blockers resolved; no safety control weakened |
 | 12 | Failure analysis and maintenance | assistant (08, 09), **human** decides | failure evidence, change notes | `failure-analysis.md`, `impact-analysis.md`, patch | failure classified from real evidence; expectation changes approved by a human; coverage effect stated |
@@ -40,6 +40,9 @@ produced it; the other is an opinion, however fluent.
 - a real test run, and the screenshot, trace and video it captures on failure
 - `tests/test_ci_production_exclusion.py` — the CI exclusion, the marker registration, and that
   every test in a production-only app carries the marker
+- `python -m ai_testing.validate_catalog` — the scenario catalogs against their schema, the
+  lifecycle rules (an approved status needs an approval record; a live-site scenario cannot be
+  CI-eligible), id uniqueness, and the scenario-to-test mappings in both directions
 - marker registration under `--strict-markers`
 
 **Judgment** — an assistant's proposal, requiring a human:
@@ -60,6 +63,7 @@ What stage 10 means, concretely. These are the framework's own commands; nothing
 
 ```bash
 ruff check . && black --check . && mypy .          # quality gates, also CI's first job
+python -m ai_testing.validate_catalog              # scenario catalogs + test mappings
 pytest tests/test_*.py -m "not production" -q      # framework self-tests, no browser
 pytest --collect-only -q -m "not production"       # confirm live-site tests are deselected
 pytest -m "smoke and not production" -n auto -q    # what the PR gate runs
@@ -73,8 +77,11 @@ authorized machine, and its result is reported as what it is: a local observatio
 
 - It does not approve a business expectation (stage 5).
 - It does not merge its own change (stage 11).
-- It does not promote a scenario to `ACTIVE_REGRESSION` — in this framework, collected tests run
-  automatically in CI, so that promotion decides what can block a release.
+- It does not set `APPROVED` or promote a scenario to `ACTIVE_REGRESSION`, and it does not fill
+  in `review.approved_by` — in this framework, collected tests run automatically in CI, so that
+  promotion decides what can block a release. The validator refuses an approved status with no
+  approval record, which makes the omission visible; it cannot tell whether the recorded review
+  actually happened.
 - It does not authorize or initiate a run against a live production site.
 - It does not edit `core/`, the root `conftest.py`, `pytest.ini`, the CI workflow or
   `tests/test_ci_production_exclusion.py` as a side effect of adding a test. Shared-framework

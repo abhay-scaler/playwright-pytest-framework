@@ -38,7 +38,18 @@ nonsense.
 | 09 | [maintenance](prompts/09_maintenance.md) | `impact-analysis.md` + patch | 07 |
 
 Templates: [feature_brief.md](templates/feature_brief.md),
-[scenario_template.yaml](templates/scenario_template.yaml).
+[scenario_template.yaml](templates/scenario_template.yaml). Schema:
+[schemas/scenario.schema.json](schemas/scenario.schema.json), validated by
+[validate_catalog.py](validate_catalog.py):
+
+```bash
+pip install -r ../requirements-ai.txt     # once; kept out of the test-runtime lock
+python -m ai_testing.validate_catalog     # schema, lifecycle rules, scenario-to-test mappings
+```
+
+Approved scenarios are committed to `apps/<app>/scenarios/<feature>.yaml` and the implementing
+test carries `@pytest.mark.scenario("<id>")`; the rules are documented in
+[docs/ai-testing/scenario-authoring.md § Validation](../docs/ai-testing/scenario-authoring.md#validation).
 
 ## House rules
 
@@ -114,8 +125,10 @@ a new key against `_KNOWN_KEYS` (`core/app_config.py:12`).
 [utils/logger.py](../utils/logger.py).
 
 **Markers** — registered in [pytest.ini](../pytest.ini): `smoke`, `ui`, `api`, `regression`,
-`production`, and `app(name)` which the root conftest applies automatically from the test's path.
-`--strict-markers` is on, so an unregistered marker is an error.
+`production`, `scenario(id)`, and `app(name)` which the root conftest applies automatically from
+the test's path. `--strict-markers` is on, so an unregistered marker is an error. Each
+`scenario(id)` is also attached as an Allure label named `scenario` by the autouse fixture in
+the root `conftest.py`, beside `application`, `browser` and `environment`.
 
 **Application discovery is structural.** A test belongs to the application named by its first
 path segment under `tests/`, provided `apps/<that name>/` exists (`conftest.py:44`). There is no
@@ -139,9 +152,15 @@ directories are git-ignored.
 
 ## Dependencies
 
-Nothing in this directory may add a dependency. `requirements.in` is the human-edited source and
-`requirements.txt` the pinned lock that **every** CI job installs, so an LLM SDK added there
-would be installed by the lint job and the nightly cross-browser sweep alike. If automated
+Nothing here may add a dependency to the **test runtime**. `requirements.in` is the human-edited
+source and `requirements.txt` the pinned lock that every CI test job installs, so anything added
+there is installed by the lint job and the nightly cross-browser sweep alike.
+
+The catalog validator's own two dependencies (PyYAML, jsonschema) therefore live in
+[requirements-ai.in](../requirements-ai.in) and the pinned
+[requirements-ai.txt](../requirements-ai.txt), installed only by CI's `Scenario Catalog` job
+and by developers who run the validator. The validator imports them lazily, the catalog
+self-tests skip without them, and no test needs them to run. If automated
 orchestration is ever justified (see
 [docs/ai-testing/workflow.md § When orchestration would be justified](../docs/ai-testing/workflow.md#when-orchestration-would-be-justified)),
 its dependencies belong in a separate file resolved separately, and that is an architecture

@@ -5,19 +5,26 @@ in a review and in a report. It is not executable. The executable truth is alway
 named in the scenario's `automation.test` field.
 
 Template: [ai_testing/templates/scenario_template.yaml](../../ai_testing/templates/scenario_template.yaml).
-Every value in it is illustrative, and the two example scenarios are not verified Myntra
+Schema: [ai_testing/schemas/scenario.schema.json](../../ai_testing/schemas/scenario.schema.json).
+Every value in the template is illustrative, and its example scenarios are not verified Myntra
 behaviour.
 
-## Where scenarios will live
+## Where scenarios live
 
 `apps/<app>/scenarios/<feature>.yaml` — inside the application package, so an application stays
 self-contained and deleting it deletes its catalog, consistent with
-[DESIGN.md](../../DESIGN.md) §1. A separate top-level catalog tree is not the plan: it would rot
+[DESIGN.md](../../DESIGN.md) §1. There is deliberately no top-level catalog tree: it would rot
 independently of the app it describes.
 
-**The directory does not exist yet.** Introducing it, with a JSON Schema and validation, is PR 2.
-Until then scenarios live in a work item directory under `artifacts/ai-work/`, and the only thing
-checking them is a reviewer.
+One file covers one feature, and its `meta.feature` must match every scenario's `feature`.
+`meta.app` must match the `apps/<app>/` package the file sits in. Drafts still being written
+belong in a work item directory under `artifacts/ai-work/`; a file committed under
+`apps/*/scenarios/` is validated on every CI run, so committing it is itself a small
+commitment.
+
+Today's catalog: [apps/myntra/scenarios/shopping_journey.yaml](../../apps/myntra/scenarios/shopping_journey.yaml)
+— one scenario describing the committed homepage test and awaiting human review, plus three
+explicitly illustrative drafts.
 
 ## Identifiers
 
@@ -26,11 +33,27 @@ checking them is a reviewer.
 - Assigned once and **never** reused or renumbered. A reordered catalog with stable ids is
   readable history; renumbering silently breaks every reference to it.
 - `AREA` is a short functional area (`SRCH`, `PDP`, `BAG`), not a page name — pages get redesigned.
-- The id belongs in the test's docstring, so a failure in a report can be traced back by anyone
-  reading it. A registered `scenario(id)` marker and a matching Allure label would make that
-  traceability machine-checkable; that is **PR 2 work and is not implemented** — today the
-  docstring and the `automation.test` field are the whole mechanism, and they go stale unless
-  review catches it.
+- The id travels with the test as a marker, and the catalog points back at the test:
+
+  ```python
+  @pytest.mark.smoke
+  @pytest.mark.ui
+  @pytest.mark.production
+  @pytest.mark.scenario("MNY-HOME-001")
+  def test_home_page_loads_successfully(page, app_config):
+      ...
+  ```
+
+  `scenario(id)` is registered in [pytest.ini](../../pytest.ini) (so `--strict-markers` accepts
+  it) and the root `conftest.py` attaches each id as an Allure label named `scenario`, beside
+  the existing `application`, `browser` and `environment` labels — de-duplicated, because one
+  test may legitimately carry the marker more than once. A report row can therefore be traced
+  to the scenario it implements, and `python -m ai_testing.validate_catalog` fails if the
+  marker and the catalog disagree.
+- A scenario is implemented by **exactly one** test. One test may cover several scenarios (one
+  marker per id); two tests claiming the same id is an error.
+- `automation.test` is a node id without parameters:
+  `tests/<app>/<suite>/<module>.py::<function>`.
 
 ## Fields that are usually got wrong
 
@@ -99,6 +122,53 @@ nightly cross-browser jobs (`conftest.py:44`, [DESIGN.md](../../DESIGN.md) §8).
 scenario decides that its test can block a release and will run on three browser engines nightly.
 A live-site scenario is never promoted — `-m "not production"` excludes it from every CI
 invocation by design.
+
+## Validation
+
+```bash
+pip install -r requirements-ai.txt        # once: PyYAML + jsonschema, pinned apart from the
+                                          # test-runtime lock that every CI test job installs
+python -m ai_testing.validate_catalog     # every catalog under apps/*/scenarios/
+python -m ai_testing.validate_catalog --root .
+```
+
+Static analysis only: it parses YAML, validates against the JSON Schema, applies the
+cross-field rules below, and reads `tests/` as an AST. It never imports a test, starts a
+browser or opens a socket, and it never executes a scenario. CI runs it in its own
+`Scenario Catalog` job, which installs `requirements-ai.txt` and nothing else; the self-tests
+in [tests/test_scenario_catalog.py](../../tests/test_scenario_catalog.py) skip when those two
+packages are absent.
+
+Each finding names the rule it broke, the file and — where it can be identified — the scenario:
+
+| Rule | Fails when |
+|---|---|
+| `E-YAML` | the file is not valid YAML, or is empty |
+| `E-SCHEMA` | a schema violation: missing field, wrong type, bad enum, or an **unknown key** (the schema sets `additionalProperties: false`, so a misspelling fails instead of being ignored) |
+| `E-VERSION` | `schema_version` is not a supported version (today: `1.0`) |
+| `E-APP` | `meta.app` does not match the owning `apps/<app>/` package, or that package does not exist |
+| `E-FEATURE` | a scenario's `feature` does not match `meta.feature` |
+| `E-DUPLICATE` | a scenario id appears more than once, in any catalog in the repository |
+| `E-MAPPING` | `automation.implemented` and `automation.test` disagree |
+| `E-LIFECYCLE` | `IMPLEMENTED`, `VALIDATED` or `ACTIVE_REGRESSION` without an implementing test |
+| `E-APPROVAL` | `APPROVED` or later without `review.approved_by` **and** `review.approved_date` |
+| `E-HISTORY` | the last `status_history` entry does not record the current status |
+| `E-MARKER` | `automation.markers` names a marker that `pytest.ini` does not register |
+| `E-PRODUCTION` | a `live-production` scenario is `ci_eligible`, lacks `authorization_required`, omits the `production` marker, or its test lacks `@pytest.mark.production` |
+| `E-REGRESSION` | `ACTIVE_REGRESSION` without `ci_eligible: true`, or on a production-marked scenario (which CI excludes by design) |
+| `E-TRACE` | `automation.test` names no real test function, the test lacks the matching `scenario` marker, two tests claim one scenario, or the two sides name different tests |
+| `E-ORPHAN` | a test is marked with a scenario id no catalog defines |
+
+`DRAFT`, `AI_REVIEWED`, `NEEDS_HUMAN_REVIEW`, `NEEDS_CLARIFICATION` and `BLOCKED` scenarios are
+not required to have a test, by design: the catalog is where coverage is planned, not only
+recorded.
+
+**What this does and does not enforce.** It enforces consistency: a status that claims approval
+must carry an approval record, a mapping must point at a real marked test, a live-site scenario
+cannot claim CI eligibility. It cannot enforce that the recorded approval is genuine — a name
+and a date in YAML are only as true as the review that produced them, and anyone with commit
+access can type them. That part stays human, and the check exists to make skipping it visible
+rather than impossible.
 
 ## Keeping the catalog honest
 

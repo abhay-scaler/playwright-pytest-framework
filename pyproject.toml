@@ -19,3 +19,12 @@ explicit_package_bases = true
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+
+# PyYAML and jsonschema are the scenario-catalog validator's own dependencies and live
+# in requirements-ai.txt, not the test-runtime lock - so the CI lint job type-checks
+# without them installed, and PyYAML ships no inline types in any case. The validator
+# imports both lazily, inside the functions that need them, so the rest of the module
+# (and `--help`) works without them.
+[[tool.mypy.overrides]]
+module = ["yaml", "jsonschema"]
+ignore_missing_imports = true
