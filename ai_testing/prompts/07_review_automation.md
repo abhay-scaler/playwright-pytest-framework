@@ -24,17 +24,17 @@ Review for, in this order:
 2. **Locator evidence** — does every selector trace to the evidence file? Any generated class
    name, positional index or marketing string?
 3. **Layer boundaries** — assertions only in tests, selectors only in locators, no raw Playwright
-   in tests, no URL or timeout literal in a page object, nothing app-specific added to `core/`.
+   in tests, no URL or timeout literal in a page object, nothing app-specific added to `pwpf/core/`.
 4. **Framework reuse** — any reimplementation of something `BasePage`, a fixture, `AppConfig` or
-   `utils/` already provides? Any component introduced without a stated reason?
+   `pwpf/utils/` already provides? Any component introduced without a stated reason?
 5. **Markers and placement** — `production` on every live-site test; `smoke` actually present on
    anything in a `smoke/` folder meant for the gate; module basenames unique across `tests/`.
 6. **Determinism** — fixed waits, hard-coded volatile data, ordering assumptions, dependence on
    another test's state, fixture scope wider than it should be.
 7. **Isolation and cleanup** — what state does the test leave behind, and is that declared?
-8. **Shared-framework blast radius** — does the diff touch `core/`, root `conftest.py`,
-   `pytest.ini`, `.github/workflows/ci.yml` or `tests/test_ci_production_exclusion.py`? Each such
-   change needs its own justification, and weakening the production exclusion is never acceptable.
+8. **Shared-framework blast radius** — does the diff touch `pwpf/`, `pytest.ini`,
+   `.github/workflows/ci.yml` or `tests/test_ci_production_exclusion.py`? Each such change needs
+   its own justification, and weakening the production exclusion is never acceptable.
 9. **Validation evidence** — did the author show real command output? Anything claimed but not
    run is a finding in itself.
 10. **Honesty of docstrings and comments** — does any comment claim verification that did not

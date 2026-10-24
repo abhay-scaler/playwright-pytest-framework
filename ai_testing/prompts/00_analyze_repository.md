@@ -7,8 +7,8 @@ here.
 
 Establish what this framework actually provides before anything is written against it, so later
 stages extend real conventions instead of inventing plausible ones. Run this once per assistant
-session that will touch code, and again after any change to `core/`, the root `conftest.py`,
-`pytest.ini` or the CI workflow.
+session that will touch code, and again after any change to `pwpf/`, `pytest.ini` or the CI
+workflow.
 
 ## Required inputs
 
@@ -17,8 +17,8 @@ session that will touch code, and again after any change to `core/`, the root `c
 
 ## Instructions
 
-1. Read, in this order: `README.md`, `DESIGN.md` §§1–9, `pytest.ini`, the root `conftest.py`,
-   `core/app_config.py`, `core/base_page.py`, `config/settings.py`,
+1. Read, in this order: `README.md`, `DESIGN.md` §§1–9, `pytest.ini`, `pwpf/plugin.py`,
+   `pwpf/core/app_config.py`, `pwpf/core/base_page.py`, `pwpf/config/settings.py`,
    `.github/workflows/ci.yml`.
 2. Read one complete existing application end to end — `apps/web_search/` plus
    `tests/web_search/` is the smallest real-network example; `apps/uitesting_playground/` shows

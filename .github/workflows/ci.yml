@@ -57,7 +57,7 @@ jobs:
       - name: Install validation dependencies
         run: pip install -r requirements-ai.txt
       - name: Validate scenario catalogs and test mappings
-        run: python -m ai_testing.validate_catalog
+        run: python -m pwpf.ai_testing.validate_catalog
 
   # PR gate. Deliberately narrow: framework self-tests (fast, no browser) +
   # the smoke suite (Chromium only). Keeps PR feedback quick; full coverage

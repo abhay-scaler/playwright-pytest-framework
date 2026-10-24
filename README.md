@@ -34,11 +34,10 @@ sample app was added with zero edits to the other two.
 ## Key Features
 
 - **Multi-application architecture** — `apps/<app_name>/` owns its own configuration, page
-  objects, and locators; the framework layer (`core/`, `conftest.py`, `utils/`) is entirely
-  application-agnostic.
+  objects, and locators; the framework layer (`pwpf/`) is entirely application-agnostic.
 - **Page Object Model** with a thin shared `BasePage` — page objects expose actions and locators
   only; assertions stay in the tests, not in page objects.
-- **API testing with no second HTTP client** — `core/api_client.py` wraps Playwright's own
+- **API testing with no second HTTP client** — `pwpf/core/api_client.py` wraps Playwright's own
   `APIRequestContext`, so API tests share the same driver/dependency as UI tests instead of adding
   `requests` or similar as a separate dependency. No browser is launched for API tests.
 - **Automatic failure diagnostics** — on a UI test failure, a full-page screenshot, the complete
@@ -91,6 +90,13 @@ sample app was added with zero edits to the other two.
 ## Project Structure
 
 ```
+pwpf/                       # the installable framework package (pip install .)
+  plugin.py                  #   the pytest plugin: fixtures, markers, artifacts, root
+  config/{paths,settings}.py #   consumer-root resolution and artifact locations
+  core/                      #   base_page, app_config, api_client
+  utils/                     #   logger, helpers, report_embedder, allure_cleanup
+  ai_testing/                #   catalog validator + the scenario JSON Schema (package data)
+
 apps/<app_name>/            # everything specific to one application
   config/{local,ci}.json     #   base_url, timeouts, retry policy, secret references
   pages/                     #   page objects — actions and state queries only, no assertions
@@ -119,7 +125,7 @@ tests/
   tmp/                         # a deliberately skipped manual-only diagnostic check
   test_*.py                    # tests of the framework itself (config, logging, report embedding)
 
-conftest.py                   # browser/context/page fixtures, failure capture, Allure labeling
+conftest.py                   # one line: loads pwpf.plugin from this source tree
 pytest.ini                    # test discovery, markers, default CLI options
 pyproject.toml                # Ruff / Black / mypy configuration
 requirements.in / .txt        # loose source and fully-pinned lock file
@@ -136,7 +142,28 @@ files). They are created when something is actually written, under the **project
 under the framework's own directory, and never as a side effect of importing a module. Under
 pytest the root is pytest's own `rootdir`; elsewhere set `PWPF_ROOT`, pass `--root` where a
 command supports it, or run from a directory at or below the one holding `pytest.ini`. The
-full precedence is in `config/paths.py` and [DESIGN.md](DESIGN.md) §6.
+full precedence is in `pwpf/config/paths.py` and [DESIGN.md](DESIGN.md) §6.
+
+## Using the framework in another project
+
+The framework is an installable distribution with a pytest plugin entry point, so a
+consumer project needs no `conftest.py` to get the fixtures, the markers or the artifact
+handling:
+
+```bash
+pip install playwright-pytest-framework          # from a wheel, index or path
+pip install "playwright-pytest-framework[ai]"    # plus the scenario-catalog validator
+python -m playwright install chromium            # browsers, once
+```
+
+The consumer keeps its own layout — `pytest.ini`, `apps/<app>/`, `tests/<app>/` — and pytest
+discovers the plugin automatically through the `pytest11` entry point. Everything is resolved
+against *that* project: its applications, and its `screenshots/`, `reports/`, `logs/`,
+`traces/` and `videos/`, never the installed package's directory. The catalog validator is
+available as `pwpf-validate-catalog` or `python -m pwpf.ai_testing.validate_catalog`.
+
+`scripts/verify_installed_package.py` builds a wheel, installs it into a throwaway virtual
+environment and runs a generated consumer project against it, asserting exactly that.
 
 ## Prerequisites
 
@@ -224,7 +251,7 @@ Two layers of configuration exist.
   `consent_selector` a site's cookie banner can be dismissed with). **Unknown keys are
   accepted silently, not rejected** — a misspelling, or an invented key such as `timeout_ms`
   instead of `action_timeout`, lands in `extra` and simply never takes effect. Check a new
-  key against `_KNOWN_KEYS` in `core/app_config.py` before relying on it;
+  key against `_KNOWN_KEYS` in `pwpf/core/app_config.py` before relying on it;
   `ignore_https_errors` is the only key that fails loudly on a wrong type.
 
 Example combining both layers:
@@ -278,7 +305,7 @@ Registered markers (`pytest.ini`): `smoke`, `ui`, `api`, `regression` (reserved 
 currently no test carries it), `production` (drives a live third-party site; excluded from every
 CI job, opt in locally as above), `scenario(id)` (the catalog scenario a test implements, also
 attached as an Allure label), `quarantined` (known-unstable; excluded from the blocking CI
-gates, run in a non-blocking job), and an auto-applied `app(name)` marker `conftest.py` assigns
+gates, run in a non-blocking job), and an auto-applied `app(name)` marker `pwpf/plugin.py` assigns
 based on each test's file path.
 
 ## Reporting and Failure Diagnostics
@@ -313,7 +340,7 @@ error / page error lines captured passively during the run.
 ## Architecture and Fixture Strategy
 
 Full detail, including the execution flow and the step-by-step guide for onboarding a new
-application, lives in [DESIGN.md](DESIGN.md). Summary of the fixture chain (all in `conftest.py`
+application, lives in [DESIGN.md](DESIGN.md). Summary of the fixture chain (all in `pwpf/plugin.py`
 unless noted):
 
 | Fixture | Scope | Purpose |
@@ -360,7 +387,7 @@ detect-secrets scan --baseline .secrets.baseline
 without giving up full-suite and cross-browser coverage:
 
 1. **Lint & Type Check** — Ruff, Black, mypy. Every trigger, before any job installs a browser.
-2. **Scenario Catalog** — `python -m ai_testing.validate_catalog`. Every trigger; static
+2. **Scenario Catalog** — `python -m pwpf.ai_testing.validate_catalog`. Every trigger; static
    analysis, no pytest and no browser.
 3. **PR Smoke** — framework self-tests plus `-m "smoke and not production"`, Chromium only.
    Pull requests only, kept deliberately fast.

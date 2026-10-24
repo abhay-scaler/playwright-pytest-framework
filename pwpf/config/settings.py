@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from config.paths import project_root
+from pwpf.config.paths import project_root
 
 # Artifact locations, relative to the consumer project's root. They are
 # functions rather than module-level constants for two reasons: the root is not

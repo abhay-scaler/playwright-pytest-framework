@@ -50,7 +50,7 @@ result as a question — you may not decide it.
 
 ## Acceptance criteria
 
-- The revised YAML would pass `python -m ai_testing.validate_catalog` once committed: schema,
+- The revised YAML would pass `python -m pwpf.ai_testing.validate_catalog` once committed: schema,
   id uniqueness, matching `meta.feature`, and no status claiming an approval it does not have.
   Check it by placing the file under `apps/<app>/scenarios/` locally and running the validator;
   if it does not pass, it is not ready for a human.

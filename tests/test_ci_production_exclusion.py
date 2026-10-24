@@ -3,7 +3,7 @@
 `@pytest.mark.production` is a label, not an enforcement mechanism: what keeps a
 test marked `production` from running in CI is the `-m` expression on each pytest
 invocation in .github/workflows/ci.yml. Nothing else in the framework does -
-conftest.py discovers a new application purely from its directory layout, so a
+pwpf/plugin.py discovers a new application purely from its directory layout, so a
 new tests/<app>/ folder joins the regression suite automatically.
 
 Which applications are live-production targets is read from configuration, not
@@ -39,7 +39,7 @@ import json
 import re
 from pathlib import Path
 
-from config.paths import project_root
+from pwpf.config.paths import project_root
 
 BASE_DIR = project_root()
 WORKFLOW = BASE_DIR / ".github" / "workflows" / "ci.yml"
@@ -166,8 +166,8 @@ def production_apps(root: Path | None = None) -> tuple[set[str], list[str]]:
     return declared, problems
 
 
-# Mirrors `_GENERIC_SUITE_DIRS` in the root conftest.py: suite-type folders that
-# hold tests not owned by any one application. Kept in step with it by
+# Mirrors `_GENERIC_SUITE_DIRS` in pwpf/plugin.py: suite-type folders that hold
+# tests not owned by any one application. Kept in step with it by
 # test_the_application_ownership_rule_matches_conftest below.
 GENERIC_SUITE_DIRS = frozenset({"smoke", "ui", "regression", "api", "tmp"})
 
@@ -175,7 +175,7 @@ GENERIC_SUITE_DIRS = frozenset({"smoke", "ui", "regression", "api", "tmp"})
 def _owning_app(path: Path, root: Path) -> str | None:
     """The application a test file belongs to, or None if it belongs to none.
 
-    The same rule as conftest.py's `_app_name_for_path`: the first segment under
+    The same rule as pwpf/plugin.py's `_app_name_for_path`: the first segment under
     tests/ names the application when it is not a generic suite directory and
     apps/<name>/ exists. `tests/api/test_x.py` and `tests/test_x.py` therefore
     belong to no application, which is different from belonging to one that has
@@ -274,18 +274,18 @@ def test_production_marked_tests_live_only_in_declared_apps():
     )
 
 
-def _conftest_generic_suite_dirs(root: Path | None = None) -> frozenset[str] | None:
-    """The root conftest's `_GENERIC_SUITE_DIRS`, read from its source.
+def _plugin_generic_suite_dirs(root: Path | None = None) -> frozenset[str] | None:
+    """The plugin's `_GENERIC_SUITE_DIRS`, read from its source.
 
-    Deliberately not `import conftest`: five conftest.py files live in this
-    repository, and under pytest's prepend import mode - xdist workers in
-    particular - the name resolves to whichever one was imported first, which is
-    usually one of the per-application ones. Reading the literal keeps this in the
-    same static-analysis style as the rest of the module and cannot pick the wrong
-    file.
+    Read rather than imported: importing the plugin pulls in Playwright and Allure
+    for what is a static policy check, and this module already reads pytest.ini and
+    the workflow as text. It is also what the previous version had to do when the
+    constant lived in a conftest.py, where `import conftest` was ambiguous across
+    the five conftest files in this repository.
     """
     root = root if root is not None else project_root()
-    tree = ast.parse((root / "conftest.py").read_text(encoding="utf-8"), filename="conftest.py")
+    source = root / "pwpf" / "plugin.py"
+    tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):
             continue
@@ -295,19 +295,19 @@ def _conftest_generic_suite_dirs(root: Path | None = None) -> frozenset[str] | N
     return None
 
 
-def test_the_application_ownership_rule_matches_conftest():
+def test_the_application_ownership_rule_matches_the_plugin():
     """R2 only holds while the two agree on what an application is. If the root
     conftest gains or loses a generic suite directory, this fails rather than
     letting the policy quietly diverge from how tests are actually labelled."""
-    from_conftest = _conftest_generic_suite_dirs()
+    from_plugin = _plugin_generic_suite_dirs()
 
-    assert from_conftest is not None, (
-        "conftest.py no longer defines _GENERIC_SUITE_DIRS - the ownership rule here "
+    assert from_plugin is not None, (
+        "pwpf/plugin.py no longer defines _GENERIC_SUITE_DIRS - the ownership rule here "
         "mirrors it and must be re-checked against whatever replaced it"
     )
-    assert GENERIC_SUITE_DIRS == from_conftest, (
-        "GENERIC_SUITE_DIRS here has drifted from conftest.py's _GENERIC_SUITE_DIRS: "
-        f"{sorted(GENERIC_SUITE_DIRS)} vs {sorted(from_conftest)}"
+    assert GENERIC_SUITE_DIRS == from_plugin, (
+        "GENERIC_SUITE_DIRS here has drifted from pwpf/plugin.py's _GENERIC_SUITE_DIRS: "
+        f"{sorted(GENERIC_SUITE_DIRS)} vs {sorted(from_plugin)}"
     )
 
 

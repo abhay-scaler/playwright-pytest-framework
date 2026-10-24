@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from config.paths import project_root
-from config.settings import ACTION_TIMEOUT, ENVIRONMENT, RETRY_COUNT
+from pwpf.config.paths import project_root
+from pwpf.config.settings import ACTION_TIMEOUT, ENVIRONMENT, RETRY_COUNT
 
 
 def apps_dir() -> Path:

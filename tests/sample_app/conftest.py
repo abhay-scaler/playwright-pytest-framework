@@ -1,6 +1,6 @@
 import pytest
 
-from core.app_config import load_app_config
+from pwpf.core.app_config import load_app_config
 
 
 @pytest.fixture(scope="session")

@@ -20,8 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from config import paths, settings
-from config.paths import (
+from pwpf.config import paths, settings
+from pwpf.config.paths import (
     PROJECT_MARKER,
     ROOT_ENV_VAR,
     ProjectRootError,
@@ -219,11 +219,11 @@ def test_ensure_dir_creates_it_when_something_needs_it(tmp_path):
 
 
 def test_a_logger_built_before_the_root_is_pinned_writes_under_the_final_root(tmp_path):
-    """The root conftest imports utils.logger before pytest_configure can pin
+    """The plugin imports pwpf.utils.logger before pytest_configure can pin
     pytest's rootdir, so a handler that resolved its directory at construction
     time would log to one root while every other artifact went to another. The
     file handler resolves on its first record instead."""
-    from utils.logger import get_logger
+    from pwpf.utils.logger import get_logger
 
     early = _consumer(tmp_path, "early")
     final = _consumer(tmp_path, "final")
@@ -243,7 +243,7 @@ def test_a_logger_built_before_the_root_is_pinned_writes_under_the_final_root(tm
 
 
 def test_application_discovery_uses_the_resolved_root(tmp_path):
-    from core.app_config import apps_dir
+    from pwpf.core.app_config import apps_dir
 
     root = _consumer(tmp_path)
     set_project_root(root, source="caller")
@@ -285,7 +285,8 @@ def test_importing_the_framework_from_a_consumer_creates_nothing_anywhere(tmp_pa
     before = _artifact_dirs(FRAMEWORK_ROOT)
 
     result = _run(
-        ["-c", "import config.settings, core.app_config, utils.logger; print('ok')"], root
+        ["-c", "import pwpf.config.settings, pwpf.core.app_config, pwpf.utils.logger; print('ok')"],
+        root,
     )
 
     assert result.returncode == 0, result.stderr
@@ -302,7 +303,7 @@ def test_a_consumer_resolves_its_own_application_config(tmp_path):
     result = _run(
         [
             "-c",
-            "from core.app_config import load_app_config;"
+            "from pwpf.core.app_config import load_app_config;"
             "c = load_app_config('demo_app');"
             "print(c.base_url, c.action_timeout)",
         ],
@@ -321,7 +322,7 @@ def test_the_catalog_cli_validates_the_consumer_not_the_framework(tmp_path):
     pytest.importorskip("jsonschema", reason="requirements-ai.txt is not installed")
     root = _consumer(tmp_path)
 
-    result = _run(["-m", "ai_testing.validate_catalog"], root)
+    result = _run(["-m", "pwpf.ai_testing.validate_catalog"], root)
 
     assert result.returncode == 0, result.stdout + result.stderr
     # The consumer has no catalogs of its own, and the framework's own Myntra
@@ -337,7 +338,7 @@ def test_the_catalog_cli_honours_an_explicit_root(tmp_path):
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
 
-    result = _run(["-m", "ai_testing.validate_catalog", "--root", str(root)], elsewhere)
+    result = _run(["-m", "pwpf.ai_testing.validate_catalog", "--root", str(root)], elsewhere)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"checked under {root.resolve()}" in result.stdout
@@ -348,7 +349,7 @@ def test_the_catalog_cli_reports_an_unresolvable_root_instead_of_guessing(tmp_pa
     nowhere = tmp_path / "no-project"
     nowhere.mkdir()
 
-    result = _run(["-m", "ai_testing.validate_catalog"], nowhere)
+    result = _run(["-m", "pwpf.ai_testing.validate_catalog"], nowhere)
 
     assert result.returncode == 2, result.stdout + result.stderr
     assert ROOT_ENV_VAR in result.stderr
@@ -361,7 +362,7 @@ def test_the_environment_override_works_for_a_consumer_subprocess(tmp_path):
     elsewhere.mkdir()
 
     result = _run(
-        ["-c", "from config.settings import log_dir; print(log_dir())"],
+        ["-c", "from pwpf.config.settings import log_dir; print(log_dir())"],
         elsewhere,
         **{ROOT_ENV_VAR: str(root)},
     )
@@ -380,7 +381,7 @@ def test_logging_without_a_resolvable_root_neither_raises_nor_writes(tmp_path):
     result = _run(
         [
             "-c",
-            "import utils.logger as L;"
+            "import pwpf.utils.logger as L;"
             "log = L.get_logger('probe.no_root');"
             "log.info('hello');"
             "print('ok')",

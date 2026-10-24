@@ -1,6 +1,6 @@
 import pytest
 
-from core.api_client import api_request_context
+from pwpf.core.api_client import api_request_context
 
 
 @pytest.mark.api

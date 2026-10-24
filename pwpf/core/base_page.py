@@ -6,8 +6,8 @@ import allure
 from playwright.sync_api import Page, expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-from core.app_config import AppConfig
-from utils.helpers import take_screenshot
+from pwpf.core.app_config import AppConfig
+from pwpf.utils.helpers import take_screenshot
 
 WaitUntil = Literal["commit", "domcontentloaded", "load", "networkidle"]
 

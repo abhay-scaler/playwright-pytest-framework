@@ -2,8 +2,8 @@ import allure
 from playwright.sync_api import Page
 
 from apps.uitesting_playground.locators.home_page_locators import HomePageLocators
-from core.app_config import AppConfig
-from core.base_page import BasePage
+from pwpf.core.app_config import AppConfig
+from pwpf.core.base_page import BasePage
 
 
 class HomePage(BasePage):

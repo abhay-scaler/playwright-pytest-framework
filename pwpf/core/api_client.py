@@ -5,7 +5,7 @@ from typing import Iterator, Optional
 
 from playwright.sync_api import APIRequestContext, sync_playwright
 
-from core.app_config import AppConfig
+from pwpf.core.app_config import AppConfig
 
 
 @contextmanager

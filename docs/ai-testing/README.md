@@ -46,7 +46,7 @@ Three properties hold at every stage, and everything else here follows from them
   this repository are executable: Ruff, Black and mypy; `--strict-markers`; the `-m "not
   production"` exclusion on every pytest invocation in CI, guarded by
   [tests/test_ci_production_exclusion.py](../../tests/test_ci_production_exclusion.py);
-  `python -m ai_testing.validate_catalog`, which refuses a catalog whose statuses, approval
+  `python -m pwpf.ai_testing.validate_catalog`, which refuses a catalog whose statuses, approval
   records and test mappings do not line up; and human review. A rule that lives only in a
   prompt is a convention, and conventions are broken by accident.
 

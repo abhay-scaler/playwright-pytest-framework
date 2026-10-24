@@ -15,7 +15,7 @@ AI-assisted work goes wrong, because the claims are always fluent.
 - [ ] No expected result was derived from the application's current behaviour.
 - [ ] Inferences are labelled `[A]`, open questions `[?]`; neither is hiding in prose.
 - [ ] Ids follow the scheme, are unique, and nothing was renumbered.
-- [ ] `python -m ai_testing.validate_catalog` passes, with its real output shown — schema,
+- [ ] `python -m pwpf.ai_testing.validate_catalog` passes, with its real output shown — schema,
       lifecycle rules, id uniqueness and test mappings.
 - [ ] Any new or changed catalog file sits in `apps/<app>/scenarios/`, with `meta.app` and
       `meta.feature` matching.
@@ -42,7 +42,7 @@ AI-assisted work goes wrong, because the claims are always fluent.
 - [ ] No `assert` or `expect` in a page object.
 - [ ] No URL or timeout literal: `self.config.base_url`, `self.config.action_timeout`.
 - [ ] Only methods `BasePage` already provides, or a separately justified proposal to add one.
-- [ ] Nothing app-specific added to `core/`.
+- [ ] Nothing app-specific added to `pwpf/core/`.
 - [ ] State exposed as a value or a `Locator` so the test can use auto-retrying `expect`.
 - [ ] A component, if introduced, has a stated reason and is documented.
 - [ ] `__init__.py` present for a new app package, matching every other app.
@@ -111,7 +111,7 @@ AI-assisted work goes wrong, because the claims are always fluent.
 ## Human review
 
 - [ ] A named person approved every expected result that became an assertion.
-- [ ] Shared-framework changes (`core/`, root `conftest.py`, `pytest.ini`, CI workflow) are
-      reviewed as their own change, each with a justification.
+- [ ] Shared-framework changes (`pwpf/`, `pytest.ini`, CI workflow) are reviewed as their own
+      change, each with a justification.
 - [ ] No claim in a docstring, comment or report asserts verification that did not happen.
 - [ ] The merge decision is a human's, and the assistant did not merge its own change.

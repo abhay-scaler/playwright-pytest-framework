@@ -2,8 +2,8 @@
 
 Run it directly:
 
-    python -m ai_testing.validate_catalog            # the whole repository
-    python -m ai_testing.validate_catalog --root .   # explicit root
+    python -m pwpf.ai_testing.validate_catalog          # the whole project
+    pwpf-validate-catalog --root /path/to/project       # installed console script
 
 It is static analysis and nothing else: it parses YAML, validates it against
 `ai_testing/schemas/scenario.schema.json`, applies the cross-field lifecycle
@@ -29,15 +29,25 @@ import json
 import re
 import sys
 from dataclasses import dataclass, replace
+from importlib import resources
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-from config.paths import ProjectRootError, project_root, set_project_root
+from pwpf.config.paths import ProjectRootError, project_root, set_project_root
 
-# The schema ships with the framework, so it is resolved relative to this file.
-# The catalogs do not: they belong to whichever project is being validated, which
-# is why every entry point below resolves a project root instead of assuming one.
-SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "scenario.schema.json"
+# The schema ships with the framework, so it is read as package data rather than
+# from a path next to this file: once installed, "next to this file" is inside
+# site-packages, and a zipped distribution has no such path at all. The catalogs
+# are the opposite - they belong to whichever project is being validated, which
+# is why every entry point below resolves a consumer project root.
+SCHEMA_RESOURCE = "schemas/scenario.schema.json"
+
+
+def schema_text() -> str:
+    """The scenario schema, from the installed distribution."""
+    package = resources.files(__package__)
+    return (package / SCHEMA_RESOURCE).read_text(encoding="utf-8")
+
 
 # A backwards-incompatible schema change adds a new file and a new entry here,
 # so catalogs on the old version keep validating until they are migrated.
@@ -121,7 +131,7 @@ def _scenario_id_at(document: Any, json_path: Sequence[Any]) -> str | None:
 def schema_findings(path: Path, document: Any) -> list[Finding]:
     from jsonschema import Draft202012Validator
 
-    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema = json.loads(schema_text())
     validator = Draft202012Validator(schema)
     findings = []
     for error in sorted(validator.iter_errors(document), key=lambda e: list(e.absolute_path)):
@@ -499,7 +509,7 @@ def validate_catalog(root: Path | None = None) -> list[Finding]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="python -m ai_testing.validate_catalog",
+        prog="pwpf-validate-catalog",
         description="Validate the scenario catalogs and their test mappings. Static analysis "
         "only: no browser, no network, no scenario execution.",
     )
@@ -508,7 +518,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         default=None,
         help="project root to validate (default: the resolved project root - see "
-        "config/paths.py for the precedence)",
+        "pwpf/config/paths.py for the precedence)",
     )
     args = parser.parse_args(argv)
     try:

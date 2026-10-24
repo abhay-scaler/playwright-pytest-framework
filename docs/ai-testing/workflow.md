@@ -40,7 +40,7 @@ produced it; the other is an opinion, however fluent.
 - a real test run, and the screenshot, trace and video it captures on failure
 - `tests/test_ci_production_exclusion.py` — the CI exclusion, the marker registration, and that
   every test in a production-only app carries the marker
-- `python -m ai_testing.validate_catalog` — the scenario catalogs against their schema, the
+- `python -m pwpf.ai_testing.validate_catalog` — the scenario catalogs against their schema, the
   lifecycle rules (an approved status needs an approval record; a live-site scenario cannot be
   CI-eligible), id uniqueness, and the scenario-to-test mappings in both directions
 - marker registration under `--strict-markers`
@@ -63,7 +63,7 @@ What stage 10 means, concretely. These are the framework's own commands; nothing
 
 ```bash
 ruff check . && black --check . && mypy .          # quality gates, also CI's first job
-python -m ai_testing.validate_catalog              # scenario catalogs + test mappings
+python -m pwpf.ai_testing.validate_catalog              # scenario catalogs + test mappings
 pytest tests/test_*.py -m "not production" -q      # framework self-tests, no browser
 pytest --collect-only -q -m "not production"       # confirm live-site tests are deselected
 pytest -m "smoke and not production" -n auto -q    # what the PR gate runs
@@ -83,9 +83,9 @@ authorized machine, and its result is reported as what it is: a local observatio
   approval record, which makes the omission visible; it cannot tell whether the recorded review
   actually happened.
 - It does not authorize or initiate a run against a live production site.
-- It does not edit `core/`, the root `conftest.py`, `pytest.ini`, the CI workflow or
-  `tests/test_ci_production_exclusion.py` as a side effect of adding a test. Shared-framework
-  changes are proposed separately, with a reason.
+- It does not edit `pwpf/`, `pytest.ini`, the CI workflow or
+  `tests/test_ci_production_exclusion.py` as a side effect of adding a test.
+  Shared-framework changes are proposed separately, with a reason.
 - It does not weaken an assertion, add a sleep, raise a timeout or add a rerun to turn a failure
   green.
 

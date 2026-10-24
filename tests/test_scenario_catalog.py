@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from ai_testing.validate_catalog import discover_catalogs, validate_catalog
-from config.paths import project_root
+from pwpf.ai_testing.validate_catalog import discover_catalogs, validate_catalog
+from pwpf.config.paths import project_root
 
 yaml = pytest.importorskip("yaml", reason="requirements-ai.txt is not installed")
 pytest.importorskip("jsonschema", reason="requirements-ai.txt is not installed")
