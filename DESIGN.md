@@ -593,6 +593,43 @@ running under real `pytest -n auto` load:
 
 ---
 
+## 11. AI-Assisted Test Engineering (Optional)
+
+An optional way of working, not a part of the framework: a version-controlled set of prompts,
+templates and conventions for using a coding assistant to help design and implement tests here.
+Nothing in it is imported, installed or executed by a test run, it adds no dependency to
+`requirements.in`/`requirements.txt`, and deleting both directories would leave every test
+behaving identically.
+
+- **[docs/ai-testing/](docs/ai-testing/README.md)** — the entry point: the twelve-stage workflow
+  (inputs, outputs, owner and completion criterion per stage), scenario authoring and governance,
+  the Codegen-to-page-object standards, a review checklist and evidence-based troubleshooting.
+- **[ai_testing/](ai_testing/README.md)** — the prompt library (ten prompts, each with purpose,
+  inputs, instructions, output format, acceptance criteria, safety constraints and human-review
+  requirements), the feature-brief and scenario templates, and the house rules every prompt
+  inherits.
+
+Three constraints shape it, and they are the parts worth knowing even if you never use the
+process:
+
+- **The brief and the approved scenarios are the source of truth for expected behaviour**; the
+  application is the source of truth only for what it currently does. An expectation derived
+  from observed behaviour produces a test that agrees with the bug.
+- **An assistant proposes, a human approves and merges.** No assistant approves a business
+  expectation, authorizes a run against a live site, promotes a scenario to active regression,
+  or merges its own change — and shared-framework changes (`core/`, the root `conftest.py`,
+  `pytest.ini`, the CI workflow) are proposed separately, with a reason, never as a side effect
+  of adding a test.
+- **Prompt text enforces nothing.** What enforces anything here is executable: Ruff, Black and
+  mypy; `--strict-markers`; the `-m "not production"` exclusion on every pytest invocation in
+  CI, guarded by `tests/test_ci_production_exclusion.py` (§8); and human review. A YAML flag that
+  no code reads is documentation, never a safety control.
+
+Work in progress — drafts, recordings, exploration evidence — lives in `artifacts/ai-work/`,
+which is git-ignored. The scenario catalog, its JSON Schema, a scenario-id marker for
+traceability, and any CLI or LLM orchestration are **not implemented**; they are later,
+separate decisions, and `docs/ai-testing/README.md` records which is which.
+
 ## Adding a New Application
 
 Follow these steps to onboard a new application, e.g. `checkout_app`. Nothing here requires

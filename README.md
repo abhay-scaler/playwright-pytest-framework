@@ -124,6 +124,8 @@ pyproject.toml                # Ruff / Black / mypy configuration
 requirements.in / .txt        # loose source and fully-pinned lock file
 .github/workflows/ci.yml      # CI pipeline
 DESIGN.md                     # full architecture, execution flow, and onboarding walkthrough
+docs/ai-testing/              # optional AI-assisted test engineering workflow (documentation)
+ai_testing/                   # its prompt library and templates (no code, no dependencies)
 ```
 
 Generated at runtime (all git-ignored): `reports/` (HTML + Allure results), `screenshots/`,
