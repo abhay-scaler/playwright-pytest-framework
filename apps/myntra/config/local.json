@@ -1,4 +1,5 @@
 {
+  "production_target": true,
   "base_url": "https://www.myntra.com/",
   "action_timeout": 15000,
   "retry_count": 0,
