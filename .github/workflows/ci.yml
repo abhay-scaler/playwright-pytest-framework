@@ -94,18 +94,20 @@ jobs:
           CI: true
           HEADLESS: true
           ENVIRONMENT: ci
-        # -m "not production" on every pytest invocation in this workflow: tests marked
-        # `production` drive a live third-party site and are local-only by policy (see
-        # pytest.ini and DESIGN.md). The marker is not an enforcement mechanism on its
-        # own - these four commands are, and tests/test_ci_production_exclusion.py
-        # fails if any pytest invocation here loses the exclusion.
-        run: pytest tests/test_*.py -m "not production" --junitxml=reports/junit-framework.xml
+        # Every blocking pytest invocation in this workflow carries -m "not production
+        # and not quarantined". `production` tests drive a live third-party site and are
+        # local-only by policy; `quarantined` tests are known-unstable and run in the
+        # non-blocking job at the end of this file instead of gating anything. Neither
+        # marker enforces anything by itself - these commands do, and
+        # tests/test_ci_production_exclusion.py and tests/test_quarantine_policy.py fail
+        # if an invocation loses either exclusion.
+        run: pytest tests/test_*.py -m "not production and not quarantined" --junitxml=reports/junit-framework.xml
       - name: Smoke suite
         env:
           CI: true
           HEADLESS: true
           ENVIRONMENT: ci
-        run: pytest -m "smoke and not production" -n auto --junitxml=reports/junit-smoke.xml
+        run: pytest -m "smoke and not production and not quarantined" -n auto --junitxml=reports/junit-smoke.xml
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -151,7 +153,7 @@ jobs:
         # Sharded naturally by application today (tests/<app>/...); the same
         # apps/<app> boundary this framework already uses is what a future
         # CI matrix would shard on, without any new tooling.
-        run: pytest -m "not production" -n auto --junitxml=reports/junit.xml
+        run: pytest -m "not production and not quarantined" -n auto --junitxml=reports/junit.xml
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -201,12 +203,62 @@ jobs:
           HEADLESS: true
           ENVIRONMENT: ci
           BROWSER: ${{ matrix.browser }}
-        run: pytest -m "not production" -n auto --junitxml=reports/junit-${{ matrix.browser }}.xml
+        run: pytest -m "not production and not quarantined" -n auto --junitxml=reports/junit-${{ matrix.browser }}.xml
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
           name: test-artifacts-cross-browser-${{ matrix.browser }}
+          path: |
+            reports/
+            screenshots/
+            traces/
+            videos/
+          if-no-files-found: ignore
+
+  # Known-unstable tests, run so their outcome stays visible without gating
+  # anything: continue-on-error means a failure here never fails the workflow.
+  # Quarantine is a holding state with an exit criterion, not a bin - what is in
+  # it, why, and what must happen before it returns to the gates above is in
+  # DESIGN.md section 8, and tests/test_quarantine_policy.py fails if the set of
+  # quarantined tests changes without that record being updated.
+  quarantine:
+    name: Quarantined (non-blocking)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    needs: lint-and-type-check
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Resolve pinned Playwright version
+        id: playwright-version
+        run: echo "version=$(grep -oP '(?<=^playwright==)[0-9.]+' requirements.txt)" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright-version.outputs.version }}
+      - name: Install Playwright browser (Chromium)
+        run: python -m playwright install --with-deps chromium
+      - name: Quarantined suite
+        env:
+          CI: true
+          HEADLESS: true
+          ENVIRONMENT: ci
+        # Still excludes `production`: quarantine does not relax the live-site
+        # policy, and this job is not a way to run live-site tests in CI.
+        run: pytest -m "quarantined and not production" -n auto --junitxml=reports/junit-quarantine.xml
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: test-artifacts-quarantine
           path: |
             reports/
             screenshots/

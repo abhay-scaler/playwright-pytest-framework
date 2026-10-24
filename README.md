@@ -241,6 +241,9 @@ pytest -m smoke -q
 pytest -m ui -q
 pytest -m api -q
 
+# Known-unstable tests: excluded from the blocking gates, still runnable
+pytest -m quarantined -q                        # see DESIGN.md section 8 for why each one is in
+
 # Production-site tests (opt-in, local only - excluded from every CI job)
 HEADLESS=false pytest -m production -q          # headed and supervised: the intended way
 pytest tests/myntra -m production -q            # one production application
@@ -259,7 +262,8 @@ pytest tests/test_*.py -q
 Registered markers (`pytest.ini`): `smoke`, `ui`, `api`, `regression` (reserved for future use —
 currently no test carries it), `production` (drives a live third-party site; excluded from every
 CI job, opt in locally as above), `scenario(id)` (the catalog scenario a test implements, also
-attached as an Allure label), and an auto-applied `app(name)` marker `conftest.py` assigns
+attached as an Allure label), `quarantined` (known-unstable; excluded from the blocking CI
+gates, run in a non-blocking job), and an auto-applied `app(name)` marker `conftest.py` assigns
 based on each test's file path.
 
 ## Reporting and Failure Diagnostics
@@ -337,7 +341,7 @@ detect-secrets scan --baseline .secrets.baseline
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs as five jobs rather than one, so a pull request gets fast feedback
+`.github/workflows/ci.yml` runs as six jobs rather than one, so a pull request gets fast feedback
 without giving up full-suite and cross-browser coverage:
 
 1. **Lint & Type Check** — Ruff, Black, mypy. Every trigger, before any job installs a browser.
@@ -349,10 +353,14 @@ without giving up full-suite and cross-browser coverage:
    and manual dispatch.
 5. **Cross-Browser** — the full suite against Firefox and WebKit. Nightly, or on demand via
    `workflow_dispatch` — not on every PR, since it roughly triples runtime.
+6. **Quarantined (non-blocking)** — `-m "quarantined and not production"` with
+   `continue-on-error: true`: known-unstable tests still run and report, but gate nothing.
 
 Every pytest invocation in the workflow carries `-m "not production"`, so tests that drive a
 live third-party site are never collected in CI; `tests/test_ci_production_exclusion.py` fails
-if any invocation loses the exclusion. See [DESIGN.md](DESIGN.md) §8.
+if any invocation loses the exclusion. Every **blocking** invocation also excludes
+`quarantined`, which the non-blocking job runs instead;
+`tests/test_quarantine_policy.py` pins which tests those are. See [DESIGN.md](DESIGN.md) §8.
 
 Both pip and the Playwright browser binary are cached, the latter keyed on the exact pinned
 Playwright version so a dependency bump always installs fresh rather than risking a stale,
@@ -421,6 +429,10 @@ current scope, not oversights, and each has a clear extension path:
 - **Two locator modules share the same class name** (`HomePageLocators`, in two different
   applications) — harmless since imports are fully qualified, but worth knowing if you're
   searching the codebase by class name.
+- **One quarantined test.** `tests/web_search/smoke/test_web_search.py::test_web_search` races
+  Algolia DocSearch's hydration on `playwright.dev` and is excluded from the blocking CI gates
+  until that is fixed; it still runs in the non-blocking `Quarantined` job and under
+  `pytest -m quarantined`. Diagnosis, evidence and exit criteria: [DESIGN.md](DESIGN.md) §8.
 - **Single browser engine per run.** `BROWSER` selects one engine for the whole run; the
   cross-browser CI job achieves coverage via separate full-suite runs per engine, not multiple
   engines interleaved within one invocation.
