@@ -4,10 +4,16 @@ import json
 import os
 from dataclasses import dataclass, field
 from functools import lru_cache
+from pathlib import Path
 
-from config.settings import ACTION_TIMEOUT, BASE_DIR, ENVIRONMENT, RETRY_COUNT
+from config.paths import project_root
+from config.settings import ACTION_TIMEOUT, ENVIRONMENT, RETRY_COUNT
 
-APPS_DIR = BASE_DIR / "apps"
+
+def apps_dir() -> Path:
+    """Where the consumer project keeps its applications."""
+    return project_root() / "apps"
+
 
 _KNOWN_KEYS = {"base_url", "action_timeout", "retry_count", "ignore_https_errors", "secrets"}
 
@@ -47,7 +53,7 @@ class AppConfig:
 @lru_cache(maxsize=None)
 def load_app_config(app_name: str, environment: str | None = None) -> AppConfig:
     env_name = environment or ENVIRONMENT
-    config_path = APPS_DIR / app_name / "config" / f"{env_name}.json"
+    config_path = apps_dir() / app_name / "config" / f"{env_name}.json"
     if not config_path.exists():
         raise FileNotFoundError(
             f"No config found for app '{app_name}' in environment '{env_name}' "

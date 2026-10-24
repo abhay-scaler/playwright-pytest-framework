@@ -18,8 +18,9 @@ from __future__ import annotations
 import ast
 import re
 
-from config.settings import BASE_DIR
+from config.paths import project_root
 
+BASE_DIR = project_root()
 WORKFLOW = BASE_DIR / ".github" / "workflows" / "ci.yml"
 PYTEST_INI = BASE_DIR / "pytest.ini"
 DESIGN = BASE_DIR / "DESIGN.md"

@@ -23,7 +23,7 @@ def test_worker_id_reflects_xdist_worker_env_var(monkeypatch):
 
 def test_log_records_are_attributed_to_the_worker(monkeypatch, tmp_path):
     monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw7")
-    monkeypatch.setattr("config.settings.LOG_DIR", tmp_path)
+    monkeypatch.setattr("config.settings.log_dir", lambda: tmp_path)
 
     import utils.logger as logger_module
 

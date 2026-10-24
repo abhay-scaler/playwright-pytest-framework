@@ -39,8 +39,9 @@ import json
 import re
 from pathlib import Path
 
-from config.settings import BASE_DIR
+from config.paths import project_root
 
+BASE_DIR = project_root()
 WORKFLOW = BASE_DIR / ".github" / "workflows" / "ci.yml"
 PYTEST_INI = BASE_DIR / "pytest.ini"
 
@@ -125,7 +126,7 @@ def _marker_names(node) -> set[str]:
     return names
 
 
-def production_apps(root: Path = BASE_DIR) -> tuple[set[str], list[str]]:
+def production_apps(root: Path | None = None) -> tuple[set[str], list[str]]:
     """Applications declaring `production_target: true`, and any problems found.
 
     Every environment file of every application is read, so an app is a production
@@ -134,6 +135,7 @@ def production_apps(root: Path = BASE_DIR) -> tuple[set[str], list[str]]:
     flag. Problems are returned rather than raised so a single test can report all
     of them at once; nothing is skipped on their account.
     """
+    root = root if root is not None else project_root()
     declared: set[str] = set()
     problems: list[str] = []
     apps_dir = root / "apps"
@@ -272,7 +274,7 @@ def test_production_marked_tests_live_only_in_declared_apps():
     )
 
 
-def _conftest_generic_suite_dirs(root: Path = BASE_DIR) -> frozenset[str] | None:
+def _conftest_generic_suite_dirs(root: Path | None = None) -> frozenset[str] | None:
     """The root conftest's `_GENERIC_SUITE_DIRS`, read from its source.
 
     Deliberately not `import conftest`: five conftest.py files live in this
@@ -282,6 +284,7 @@ def _conftest_generic_suite_dirs(root: Path = BASE_DIR) -> frozenset[str] | None
     same static-analysis style as the rest of the module and cannot pick the wrong
     file.
     """
+    root = root if root is not None else project_root()
     tree = ast.parse((root / "conftest.py").read_text(encoding="utf-8"), filename="conftest.py")
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):

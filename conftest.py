@@ -6,16 +6,17 @@ import pytest
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+from config.paths import project_root, set_project_root
 from config.settings import (
-    BASE_DIR,
     BROWSER_NAME,
     ENVIRONMENT,
     HEADLESS,
-    SCREENSHOT_DIR,
-    TRACE_DIR,
-    VIDEO_DIR,
+    ensure_dir,
+    screenshot_dir,
+    trace_dir,
+    video_dir,
 )
-from core.app_config import APPS_DIR, load_app_config
+from core.app_config import apps_dir, load_app_config
 from utils.allure_cleanup import clean_allure_results
 from utils.logger import get_logger
 from utils.report_embedder import embed_failure_screenshots
@@ -27,12 +28,17 @@ LOGGER = get_logger(__name__)
 # exclude screenshots left over from a previous run.
 _SESSION_START = time.time()
 
-TESTS_DIR = BASE_DIR / "tests"
 # Suite-type folders that hold tests not owned by a specific application.
 _GENERIC_SUITE_DIRS = {"smoke", "ui", "regression", "api", "tmp"}
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    # pytest's rootdir is the authoritative answer to "which project is this?",
+    # and it is pinned here - before the xdist guard below - so every process,
+    # master and worker alike, resolves artifact and application paths against
+    # the consumer project rather than wherever this framework is installed.
+    set_project_root(config.rootpath, source="pytest")
+
     # Same xdist-master guard as pytest_terminal_summary below: the master's
     # own pytest_configure runs before any worker is spawned, so clearing
     # here can never race with a worker that has already started writing.
@@ -51,10 +57,14 @@ def _app_name_for_path(path: Path) -> str:
     matching apps/<app_name>/ package both exist — no registry to edit here.
     """
     try:
-        rel_parts = path.resolve().relative_to(TESTS_DIR).parts
+        rel_parts = path.resolve().relative_to(project_root() / "tests").parts
     except ValueError:
         return "framework"
-    if rel_parts and rel_parts[0] not in _GENERIC_SUITE_DIRS and (APPS_DIR / rel_parts[0]).is_dir():
+    if (
+        rel_parts
+        and rel_parts[0] not in _GENERIC_SUITE_DIRS
+        and (apps_dir() / rel_parts[0]).is_dir()
+    ):
         return rel_parts[0]
     return "framework"
 
@@ -119,11 +129,10 @@ def browser_context_args(request):
 
 @pytest.fixture
 def context(browser, browser_context_args, request):
-    video_dir = VIDEO_DIR / _app_name(request)
-    video_dir.mkdir(parents=True, exist_ok=True)
+    app_video_dir = ensure_dir(video_dir() / _app_name(request))
     ctx = browser.new_context(
         **browser_context_args,
-        record_video_dir=str(video_dir),
+        record_video_dir=str(app_video_dir),
         record_video_size={"width": 1280, "height": 720},
     )
     yield ctx
@@ -131,9 +140,8 @@ def context(browser, browser_context_args, request):
 
 
 def _save_failure_screenshot(page, app_name: str, test_name: str, node) -> None:
-    screenshot_dir = SCREENSHOT_DIR / app_name
-    screenshot_dir.mkdir(parents=True, exist_ok=True)
-    path = screenshot_dir / f"{test_name}.png"
+    app_screenshot_dir = ensure_dir(screenshot_dir() / app_name)
+    path = app_screenshot_dir / f"{test_name}.png"
     try:
         page.screenshot(path=str(path), full_page=True)
         setattr(node, "screenshot_path", str(path))
@@ -143,9 +151,8 @@ def _save_failure_screenshot(page, app_name: str, test_name: str, node) -> None:
 
 
 def _save_failure_trace(context, app_name: str, test_name: str, node) -> None:
-    trace_dir = TRACE_DIR / app_name
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    path = trace_dir / f"{test_name}.zip"
+    app_trace_dir = ensure_dir(trace_dir() / app_name)
+    path = app_trace_dir / f"{test_name}.zip"
     try:
         context.tracing.stop(path=str(path))
         setattr(node, "trace_path", str(path))
@@ -155,9 +162,8 @@ def _save_failure_trace(context, app_name: str, test_name: str, node) -> None:
 
 
 def _save_failure_video(video, app_name: str, test_name: str, node) -> None:
-    video_dir = VIDEO_DIR / app_name
-    video_dir.mkdir(parents=True, exist_ok=True)
-    dest = video_dir / f"{test_name}.webm"
+    app_video_dir = ensure_dir(video_dir() / app_name)
+    dest = app_video_dir / f"{test_name}.webm"
     try:
         saved_path = Path(video.path()).replace(dest)
         setattr(node, "video_path", str(saved_path))
