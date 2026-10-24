@@ -3,8 +3,8 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from config.settings import allure_results_dir
-from utils.logger import get_logger
+from pwpf.config.settings import allure_results_dir
+from pwpf.utils.logger import get_logger
 
 LOGGER = get_logger(__name__)
 

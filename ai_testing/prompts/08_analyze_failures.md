@@ -13,7 +13,7 @@ guessing and without making the failure disappear.
 - Actual output: the traceback, the assertion message, the Pytest summary.
 - The captured evidence: `screenshots/<app>/<test>.png`, `traces/<app>/<test>.zip`,
   `videos/<app>/<test>.webm`, `logs/`, and `reports/pytest_report.html` — all written
-  automatically on failure only (`conftest.py`).
+  automatically on failure only (`pwpf/plugin.py`).
 - The scenario the test implements, and the page objects involved.
 
 ## Instructions

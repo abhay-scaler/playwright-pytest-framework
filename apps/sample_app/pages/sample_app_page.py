@@ -6,7 +6,7 @@ import allure
 from playwright.sync_api import Locator
 
 from apps.sample_app.locators.sample_app_locators import SampleAppLocators
-from core.base_page import BasePage
+from pwpf.core.base_page import BasePage
 
 # sample_app is a static local fixture, not a network service, so it resolves its
 # own testdata path rather than using AppConfig.base_url (which stays empty for

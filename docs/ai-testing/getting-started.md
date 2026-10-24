@@ -13,7 +13,7 @@ first time. Framework setup itself is in [README.md § Installation](../../READM
   toolkit and must stay that way
   ([ai_testing/README.md § Dependencies](../../ai_testing/README.md#dependencies)). The catalog
   validator has two dependencies of its own, pinned separately: `pip install -r
-  requirements-ai.txt` once, and `python -m ai_testing.validate_catalog` works. Without them
+  requirements-ai.txt` once, and `python -m pwpf.ai_testing.validate_catalog` works. Without them
   the catalog self-tests skip, and CI validates the catalog in its own job.
 
 ## Your first pass, in order
@@ -43,7 +43,7 @@ first time. Framework setup itself is in [README.md § Installation](../../READM
 
    ```bash
    ruff check . && black --check . && mypy .
-   python -m ai_testing.validate_catalog          # catalog, lifecycle rules, test mappings
+   python -m pwpf.ai_testing.validate_catalog          # catalog, lifecycle rules, test mappings
    pytest --collect-only -q -m "not production"
    pytest tests/<app> -m "not production" -q
    ```
@@ -72,7 +72,7 @@ If you remember only four:
 | This guide | `docs/ai-testing/` | yes |
 | Page objects, locators, config | `apps/<app>/` | yes |
 | Tests | `tests/<app>/<suite>/` | yes |
-| Scenario catalog | `apps/<app>/scenarios/<feature>.yaml` | yes — validated by `python -m ai_testing.validate_catalog` |
+| Scenario catalog | `apps/<app>/scenarios/<feature>.yaml` | yes — validated by `python -m pwpf.ai_testing.validate_catalog` |
 | Failure evidence from a run | `screenshots/`, `traces/`, `videos/`, `logs/`, `reports/` | no — git-ignored, written on failure only |
 
 ## If something looks wrong

@@ -5,7 +5,7 @@ in a review and in a report. It is not executable. The executable truth is alway
 named in the scenario's `automation.test` field.
 
 Template: [ai_testing/templates/scenario_template.yaml](../../ai_testing/templates/scenario_template.yaml).
-Schema: [ai_testing/schemas/scenario.schema.json](../../ai_testing/schemas/scenario.schema.json).
+Schema: [pwpf/ai_testing/schemas/scenario.schema.json](../../pwpf/ai_testing/schemas/scenario.schema.json).
 Every value in the template is illustrative, and its example scenarios are not verified Myntra
 behaviour.
 
@@ -45,10 +45,10 @@ explicitly illustrative drafts.
   ```
 
   `scenario(id)` is registered in [pytest.ini](../../pytest.ini) (so `--strict-markers` accepts
-  it) and the root `conftest.py` attaches each id as an Allure label named `scenario`, beside
+  it) and `pwpf/plugin.py` attaches each id as an Allure label named `scenario`, beside
   the existing `application`, `browser` and `environment` labels — de-duplicated, because one
   test may legitimately carry the marker more than once. A report row can therefore be traced
-  to the scenario it implements, and `python -m ai_testing.validate_catalog` fails if the
+  to the scenario it implements, and `python -m pwpf.ai_testing.validate_catalog` fails if the
   marker and the catalog disagree.
 - A scenario is implemented by **exactly one** test. One test may cover several scenarios (one
   marker per id); two tests claiming the same id is an error.
@@ -118,7 +118,7 @@ assistant may never set it.
 
 **`ACTIVE_REGRESSION`** is consequential because of how this framework works: application
 membership is inferred from a test's path and every collected test runs in CI's regression and
-nightly cross-browser jobs (`conftest.py:44`, [DESIGN.md](../../DESIGN.md) §8). So promoting a
+nightly cross-browser jobs (`pwpf/plugin.py:86`, [DESIGN.md](../../DESIGN.md) §8). So promoting a
 scenario decides that its test can block a release and will run on three browser engines nightly.
 A live-site scenario is never promoted — `-m "not production"` excludes it from every CI
 invocation by design.
@@ -128,8 +128,8 @@ invocation by design.
 ```bash
 pip install -r requirements-ai.txt        # once: PyYAML + jsonschema, pinned apart from the
                                           # test-runtime lock that every CI test job installs
-python -m ai_testing.validate_catalog     # every catalog under apps/*/scenarios/
-python -m ai_testing.validate_catalog --root .
+python -m pwpf.ai_testing.validate_catalog     # every catalog under apps/*/scenarios/
+python -m pwpf.ai_testing.validate_catalog --root .
 ```
 
 Static analysis only: it parses YAML, validates against the JSON Schema, applies the

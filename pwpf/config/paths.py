@@ -12,7 +12,7 @@ be installed.
 
 A project root is resolved in this order, and the first one that applies wins:
 
-1. **An explicit root from the caller** - `ai_testing.validate_catalog --root`,
+1. **An explicit root from the caller** - `pwpf-validate-catalog --root`,
    or any code calling `set_project_root(..., source="caller")`. The caller is
    being deliberate, so this outranks everything.
 2. **The active pytest session's rootdir** - the root conftest passes

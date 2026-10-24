@@ -9,7 +9,7 @@ extend it.
 
 The framework has two halves that are deliberately kept separate:
 
-- **The framework layer** (`core/`, `conftest.py`, `utils/`, `config/`) — shared machinery that
+- **The framework layer** (`pwpf/`, an installable distribution with a pytest plugin) — shared machinery that
   knows nothing about any specific application. Browser lifecycle, failure-artifact capture,
   logging, and the config-loading mechanism all live here.
 - **The application layer** (`apps/<app_name>/`) — everything specific to *one* application under
@@ -24,11 +24,11 @@ apps/<app>/pages/      <- how to interact with this application's screens
        |
 apps/<app>/locators/   <- where things are on this application's screens
        |
-core/base_page.py      <- shared page-object behavior (framework layer, app-agnostic)
+pwpf/core/base_page.py <- shared page-object behavior (framework layer, app-agnostic)
        |
 apps/<app>/config/     <- this application's base_url / timeouts / secrets, per environment
        |
-conftest.py             <- browser/context/page fixtures, failure-artifact capture (framework layer)
+pwpf/plugin.py         <- browser/context/page fixtures, failure-artifact capture (framework layer)
 ```
 
 Tests never touch Playwright's `Page` API or raw selectors directly — they call methods on page
@@ -86,6 +86,14 @@ core/
   app_config.py                # loads apps/<app>/config/<environment>.json -> AppConfig
   api_client.py                 # thin APIRequestContext wrapper for API-level tests
 
+pwpf/                          # the installable framework package
+  plugin.py                    # the pytest plugin (pytest11 entry point): fixtures, markers, hooks
+  config/
+    paths.py                   # consumer-project root resolution (§6)
+    settings.py                # framework-wide env-var settings and artifact locations
+  core/, utils/                # as below, inside the package
+  ai_testing/                  # catalog validator + scenario schema (shipped as package data)
+
 config/
   settings.py                  # framework-wide env-var settings (browser, headless, etc.)
 
@@ -101,7 +109,7 @@ tests/
   api/, tmp/                    # framework-level tests not owned by one application
   test_*.py                     # tests of the framework itself (config, logging, report embedding)
 
-conftest.py                    # session/test fixtures + failure-artifact hooks (framework layer)
+conftest.py                    # one line: loads pwpf.plugin from this source tree
 pytest.ini                     # test discovery, markers, default CLI options
 pyproject.toml                 # Ruff/Black/mypy config
 requirements.in                # loose, human-maintained dependency source
@@ -117,7 +125,7 @@ requirements-ai.in / .txt      # scenario-validator deps only, outside the test 
 A single test run goes through these stages:
 
 1. **Collection** — Pytest discovers tests under `tests/`. A `pytest_collection_modifyitems` hook
-   in the root `conftest.py` inspects each test's file path, infers which application it belongs
+   in the plugin (`pwpf/plugin.py`) inspects each test's file path, infers which application it belongs
    to (the first path segment under `tests/`, if a matching `apps/<name>/` package exists), and:
    - tags it with `pytest.mark.app("<name>")` (or `"framework"` for app-agnostic tests), used later
      for Allure/report labeling;
@@ -173,8 +181,8 @@ A single test run goes through these stages:
    post-processes `reports/pytest_report.html`, embedding any failure screenshots from *this* run
    directly into the file — recursively, so per-app subdirectories are found, and namespaced
    (`<app>__<test>.png`) so two apps' identically-named screenshots never collide. A `since=`
-   timestamp (recorded when `conftest.py` is imported, before any test in the run can have written
-   anything) excludes screenshots left over from a previous run rather than silently re-embedding
+   timestamp (recorded when `pwpf/plugin.py` is imported, before any test in the run can have
+   written anything) excludes screenshots left over from a previous run rather than silently re-embedding
    stale evidence. Both the Allure-results cleanup and the screenshot-embedding step are guarded to
    run only in the xdist master process (`config.workerinput is None`) — under `pytest -n auto`
    this hook fires once per worker as well as in the master, so without the guard every worker
@@ -186,27 +194,27 @@ A single test run goes through these stages:
 
 ## 4. Major Components
 
-- **`core/app_config.py`** — `load_app_config(app_name, environment=None)` reads
+- **`pwpf/core/app_config.py`** — `load_app_config(app_name, environment=None)` reads
   `apps/<app_name>/config/<environment>.json` (defaulting to the global `ENVIRONMENT` env var) and
   returns a frozen `AppConfig` (`base_url`, `action_timeout`, `retry_count`, resolved `secrets`,
   and a passthrough `extra` dict for anything app-specific). Results are cached per
   `(app_name, environment)`. This is the one piece of machinery every application relies on, and
   the only file a new application's tests import from the framework layer besides `BasePage`.
 
-- **`core/base_page.py`** — the class every page object inherits from. Constructor is
+- **`pwpf/core/base_page.py`** — the class every page object inherits from. Constructor is
   `BasePage(page, config=None)`; page objects use `self.config.base_url` /
   `self.config.action_timeout` instead of hardcoding either. An app whose page objects can't
   function without a config (most of them) narrows this at the subclass level — see
   `apps/web_search/pages/home_page.py`'s `config: AppConfig` class-level redeclaration, which is
   what actually makes mypy treat `self.config` as non-optional inside that class.
 
-- **`core/api_client.py`** — `api_request_context(base_url="", timeout=None, config=None)`, a thin
+- **`pwpf/core/api_client.py`** — `api_request_context(base_url="", timeout=None, config=None)`, a thin
   context manager around Playwright's own `APIRequestContext` (`sync_playwright().request`), used
   in preference to a second HTTP library. Pass `config` for an app-owned API (reads its
   `base_url`/`action_timeout`); pass an explicit `base_url` for a standalone check not tied to any
   application, like `tests/api/test_json_placeholder.py`.
 
-- **`config/settings.py`** — framework-wide settings only: `BROWSER`, `HEADLESS`, `ENVIRONMENT`,
+- **`pwpf/config/settings.py`** — framework-wide settings only: `BROWSER`, `HEADLESS`, `ENVIRONMENT`,
   and the output directories (`screenshots/`, `reports/`, `logs/`, `traces/`, `videos/`). Nothing
   application-specific lives here anymore — `BASE_URL` remains for backward compatibility but is a
   legacy fallback that no page object reads; applications own their own `base_url`.
@@ -214,15 +222,15 @@ A single test run goes through these stages:
 - **`apps/<app_name>/`** — one package per application: `config/` (JSON per environment),
   `pages/`, `locators/`, and optionally `testdata/` for apps that ship their own static fixtures.
 
-- **`conftest.py`** — owns the real fixture chain (`playwright_context` → `browser` → `context` →
-  `page`), the failure-artifact capture, the app-inference hook, and Allure labeling. This is the
+- **`pwpf/plugin.py`** — owns the real fixture chain (`playwright_context` → `browser` →
+  `context` → `page`), the failure-artifact capture, the app-inference hook, and Allure labeling. This is the
   single source of truth for browser lifecycle.
 
 ## 5. Fixture Strategy
 
 | Fixture | Scope | Owner | Purpose |
 |---|---|---|---|
-| `playwright_context` | session | framework (`conftest.py`) | One Playwright driver instance for the whole run |
+| `playwright_context` | session | framework (`pwpf/plugin.py`) | One Playwright driver instance for the whole run |
 | `browser` | session | framework | One browser process shared by all tests |
 | `browser_context_args` | function | framework | Context options (viewport, `ignore_https_errors`) — function-scoped specifically so it can read the current test's app and apply that app's own `ignore_https_errors` setting |
 | `context` | function | framework | Fresh, isolated browser context per test, video pointed at this test's app folder |
@@ -261,7 +269,7 @@ Two design choices worth calling out:
   whose environment has a real certificate worth validating sets
   `"ignore_https_errors": false` in its own config JSON — nothing else changes, and every existing
   app's config simply omits the key.
-- **Paths belong to the consuming project, not to the framework.** `config/paths.py`
+- **Paths belong to the consuming project, not to the framework.** `pwpf/config/paths.py`
   resolves a project root and everything else hangs off it: `apps/`, `tests/`, and the
   `screenshots/`, `reports/`, `logs/`, `traces/`, `videos/` artifact directories. The root is
   decided in a fixed order — an explicit root from the caller (the catalog CLI's `--root`),
@@ -316,7 +324,7 @@ Authentication API  ->  storage_state  ->  role-based session  ->  worker-isolat
 
 Concretely, layered onto what already exists without forking any shared fixture:
 
-- Authenticate **via API, not UI** (`core/api_client.py`'s `api_request_context`, or the app's own
+- Authenticate **via API, not UI** (`pwpf/core/api_client.py`'s `api_request_context`, or the app's own
   auth endpoint) — a login form is exactly the kind of shared UI most likely to have its own
   transient issues unrelated to what's actually under test, and per-test UI login is the single
   largest avoidable source of both slowness and flakiness at scale.
@@ -394,7 +402,7 @@ feedback without giving up full-suite and cross-browser coverage:
 1. **Lint & Type Check** — `ruff check .`, `black --check .`, `mypy .`. Runs on every trigger
    (push, PR, schedule, manual dispatch), before any job installs a browser, so a lint/type error
    fails in seconds rather than after a multi-minute Playwright install.
-2. **Scenario Catalog** — `python -m ai_testing.validate_catalog`, installing only
+2. **Scenario Catalog** — `python -m pwpf.ai_testing.validate_catalog`, installing only
    `requirements-ai.txt` (PyYAML + jsonschema). Every trigger. No pytest, no browser, no
    network, so it needs no Playwright install and finishes in seconds; it is also the only job
    that installs anything outside the test-runtime lock (§11).
@@ -623,7 +631,7 @@ dedicated branch without changing the architecture described above:
   identically-named screenshots can't collide once copied into one flat `assets/` folder. Covered
   by `tests/test_report_embedder.py`.
 - **Logging was not xdist-safe** — every worker wrote to one shared, unattributed log file. Fixed
-  by making `utils/logger.py` worker-aware (§3/§7), covered by `tests/test_logger.py`.
+  by making `pwpf/utils/logger.py` worker-aware (§3/§7), covered by `tests/test_logger.py`.
 - **No dependency lock file** — `requirements.txt` was loose lower-bound constraints only.
   Replaced with a `pip-compile`-generated lock (§9), verified to install cleanly in a completely
   fresh environment.
@@ -641,7 +649,7 @@ dedicated branch without changing the architecture described above:
   (`assert True`, `assert 2 + 2 == 4`), inflating the passing-test count without contributing real
   coverage. The `regression` marker remains registered for real future use; it's simply unused
   today rather than backed by a fake placeholder.
-- **The one real API test moved off `requests`** and onto `core/api_client.py`, a thin wrapper
+- **The one real API test moved off `requests`** and onto `pwpf/core/api_client.py`, a thin wrapper
   around Playwright's own `APIRequestContext` (§4) — `requests` was used nowhere else, so this
   removed a dependency rather than adding one.
 - **Static type checking added** (mypy, non-strict, incremental — see `pyproject.toml`), which
@@ -678,11 +686,11 @@ running under real `pytest -n auto` load:
   (§3/§7), so a nightly cross-browser failure is identifiable from the Allure result itself.
 - **No negative-path API coverage** — `tests/api/test_json_placeholder.py` gained a test asserting
   the real, verified contract for a nonexistent resource (`GET /posts/999999` → `status=404`,
-  `ok=False`, no exception raised — `core/api_client.py` is a thin passthrough to Playwright's own
+  `ok=False`, no exception raised — `pwpf/core/api_client.py` is a thin passthrough to Playwright's own
   `APIRequestContext`, which does not raise on a non-2xx response).
 - **`reports/allure-results/` accumulated forever** — allure-pytest never clears its own output
   directory, so every run added another UUID-named result per test with nothing ever removing old
-  ones. Fixed with a `pytest_configure` hook (`utils/allure_cleanup.py`, same xdist-master guard as
+  ones. Fixed with a `pytest_configure` hook (`pwpf/utils/allure_cleanup.py`, same xdist-master guard as
   above) that clears the directory once at the start of each run.
 
 ---
@@ -711,9 +719,8 @@ process:
   from observed behaviour produces a test that agrees with the bug.
 - **An assistant proposes, a human approves and merges.** No assistant approves a business
   expectation, authorizes a run against a live site, promotes a scenario to active regression,
-  or merges its own change — and shared-framework changes (`core/`, the root `conftest.py`,
-  `pytest.ini`, the CI workflow) are proposed separately, with a reason, never as a side effect
-  of adding a test.
+  or merges its own change — and shared-framework changes (`pwpf/`, `pytest.ini`, the CI
+  workflow) are proposed separately, with a reason, never as a side effect of adding a test.
 - **Prompt text enforces nothing.** What enforces anything here is executable: Ruff, Black and
   mypy; `--strict-markers`; the `-m "not production"` exclusion on every pytest invocation in
   CI, guarded by `tests/test_ci_production_exclusion.py` (§8); and human review. A YAML flag that
@@ -729,16 +736,16 @@ application stays self-contained (§1) — there is deliberately no top-level ca
 are a design and traceability record: nothing in the test runtime reads them, and the executable
 truth is always the test named in a scenario's `automation.test`.
 
-- **Schema**: `ai_testing/schemas/scenario.schema.json`, JSON Schema 2020-12, versioned
+- **Schema**: `pwpf/ai_testing/schemas/scenario.schema.json`, JSON Schema 2020-12, versioned
   (`schema_version: "1.0"`). Unknown keys are rejected, so a misspelled field fails instead of
   being silently ignored — the same failure mode `AppConfig.extra` has for configuration (§6),
   avoided here deliberately.
-- **Validation**: `python -m ai_testing.validate_catalog` — schema, id uniqueness across every
+- **Validation**: `python -m pwpf.ai_testing.validate_catalog` — schema, id uniqueness across every
   catalog, the lifecycle rules, and the scenario-to-test mappings in both directions. Static
   analysis: it parses YAML and reads `tests/` as an AST, never importing a test, starting a
   browser or opening a socket. CI runs it in its own `Scenario Catalog` job (§8).
 - **Traceability**: the implementing test carries `@pytest.mark.scenario("<id>")` — registered
-  in `pytest.ini` like every other marker — and the root `conftest.py` attaches each id as an
+  in `pytest.ini` like every other marker — and the plugin attaches each id as an
   Allure label named `scenario`, beside `application`, `browser` and `environment`. One scenario
   is implemented by exactly one test; one test may cover several scenarios.
 - **Dependencies**: the validator needs PyYAML and jsonschema, pinned in `requirements-ai.txt`
@@ -752,6 +759,40 @@ truth is always the test named in a scenario's `automation.test`.
 
 A CLI or LLM orchestration is still **not implemented** and remains a separate, later decision;
 `docs/ai-testing/README.md` records what is built and what is not.
+
+## 12. Packaging and the pytest plugin
+
+The framework is an installable distribution, `playwright-pytest-framework`, importable as
+`pwpf`. That is what lets another repository use it without copying files, and it is why
+nothing in `pwpf/` may assume the framework sits at the root of the project under test (§6).
+
+- **One package, not four top-level modules.** `config/`, `core/`, `utils/` and the catalog
+  validator moved under `pwpf/` with their structure intact. Installing `config` or `core` as
+  top-level names would collide with a consumer's own modules the first time one of them had a
+  `config` package — the reason to take the namespace now rather than later.
+- **The plugin is the entry point.** `pwpf/plugin.py` holds what the root `conftest.py` used to:
+  the fixture chain, the application-inference hook, the failure-artifact hooks, the Allure
+  labels, and marker registration. `[project.entry-points.pytest11]` makes pytest load it on
+  installation, so a consumer gets all of it with no `conftest.py` of its own. This repository
+  loads the same module through a one-line `pytest_plugins` in its root `conftest.py`, so the
+  suite exercises exactly the code a consumer runs; pytest registers a plugin module once, so
+  the two routes cannot double-register it.
+- **Markers come from the plugin.** It registers `smoke`, `ui`, `api`, `regression`,
+  `production`, `quarantined`, `scenario(id)` and `app(name)` in `pytest_configure`, so
+  `--strict-markers` works in a consumer that declares none of them. This repository keeps its
+  own copy in `pytest.ini` as well — the policy guards in `tests/` read that file — and
+  registering a marker twice is harmless.
+- **Framework data ships; consumer data does not.** The scenario schema is package data, read
+  through `importlib.resources`, so it survives installation and would survive zipping. Scenario
+  catalogs, application configuration and artifacts stay in the consumer project, resolved from
+  its root.
+- **What is deliberately not in the wheel:** `apps/`, `tests/`, `docs/` and the `ai_testing/`
+  prompt library. The prompts and templates are repository documentation for now; shipping them
+  as package data is a separate decision.
+- **Proof, not assertion:** `scripts/verify_installed_package.py` builds a wheel, installs it
+  with its real dependencies into a clean virtual environment, generates a consumer project and
+  runs it with the framework source tree nowhere on the path — checking plugin discovery,
+  application discovery, artifact locations, the console script and the packaged schema.
 
 ## Adding a New Application
 
@@ -939,4 +980,4 @@ convention:
 
 The only case that touches a shared file is a **new secret in CI** (adding a GitHub Actions
 secret + one `env:` line in `ci.yml`) — and even that never requires editing another
-application's tests or the framework layer (`core/`, root `conftest.py`, `config/settings.py`).
+application's tests or the framework layer (`pwpf/`).

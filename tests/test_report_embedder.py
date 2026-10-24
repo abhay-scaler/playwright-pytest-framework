@@ -1,7 +1,7 @@
 import os
 import time
 
-from utils.report_embedder import embed_failure_screenshots
+from pwpf.utils.report_embedder import embed_failure_screenshots
 
 
 def _make_report(tmp_path):

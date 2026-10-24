@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from config.settings import screenshot_dir as default_screenshot_dir
-from utils.logger import get_logger
+from pwpf.config.settings import screenshot_dir as default_screenshot_dir
+from pwpf.utils.logger import get_logger
 
 LOGGER = get_logger(__name__)
 

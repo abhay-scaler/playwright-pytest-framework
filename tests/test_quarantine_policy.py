@@ -18,7 +18,7 @@ from __future__ import annotations
 import ast
 import re
 
-from config.paths import project_root
+from pwpf.config.paths import project_root
 
 BASE_DIR = project_root()
 WORKFLOW = BASE_DIR / ".github" / "workflows" / "ci.yml"

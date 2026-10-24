@@ -1,4 +1,4 @@
-from utils.allure_cleanup import clean_allure_results
+from pwpf.utils.allure_cleanup import clean_allure_results
 
 
 def test_clean_allure_results_removes_stale_files(tmp_path):

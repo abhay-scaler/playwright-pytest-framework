@@ -26,7 +26,7 @@ live here.
    `(page, config)`, redeclaring `config: AppConfig` so it is non-optional. Read timeouts from
    `self.config.action_timeout` and URLs from `self.config.base_url` — never a literal.
 4. Use only the methods `BasePage` already provides (`ai_testing/README.md` § Verified framework
-   facts). If something is genuinely missing, stop and propose adding it to `core/base_page.py`
+   facts). If something is genuinely missing, stop and propose adding it to `pwpf/core/base_page.py`
    as a separate, justified shared-framework change — do not add a private helper that
    duplicates it in the app layer, and do not reach for `self.page` to work around it unless the
    existing code already does so for that case.
@@ -63,7 +63,7 @@ mypy .
 - Every selector cites evidence; nothing invented.
 - No assertion, no fixed wait, no hard-coded URL or timeout in a page object.
 - Only existing `BasePage` methods are used, or a shared change is proposed separately.
-- `core/`, the root `conftest.py`, `pytest.ini` and the CI workflow are untouched.
+- `pwpf/`, `pytest.ini` and the CI workflow are untouched.
 - Ruff, Black and mypy pass, with their real output shown.
 
 ## Safety constraints

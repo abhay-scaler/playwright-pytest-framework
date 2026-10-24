@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Evidence-based diagnosis. The framework captures a screenshot, a trace and a video for every
-failed UI test, automatically and only on failure (`conftest.py`), under `screenshots/<app>/`,
+failed UI test, automatically and only on failure (`pwpf/plugin.py`), under `screenshots/<app>/`,
 `traces/<app>/` and `videos/<app>/`, with the screenshot embedded in
 `reports/pytest_report.html` and per-worker logs under `logs/`. Open the trace before theorising:
 
@@ -16,7 +16,7 @@ matters is that a fix which makes the failure disappear without explaining it is
 ## Framework and workflow problems
 
 **A new application's tests are not collected.** Membership is structural: the first path segment
-under `tests/` must match an existing `apps/<name>/` directory (`conftest.py:44`). Check the
+under `tests/` must match an existing `apps/<name>/` directory (`pwpf/plugin.py:86`). Check the
 directory names match exactly, and that `apps/<app>/__init__.py` and the `pages/`/`locators/`
 `__init__.py` files exist.
 
@@ -33,7 +33,7 @@ That is a shared-framework change: justify it rather than slipping it in.
 
 **A config value has no effect.** Only `base_url`, `action_timeout`, `retry_count`,
 `ignore_https_errors` and `secrets` are recognised; everything else is swept into `AppConfig.extra`
-**silently** (`core/app_config.py:12`). A misspelling never errors — check `_KNOWN_KEYS`.
+**silently** (`pwpf/core/app_config.py:12`). A misspelling never errors — check `_KNOWN_KEYS`.
 
 **`No config found for app '<app>' in environment '<env>'`** — `ENVIRONMENT` (default `local`)
 selects `apps/<app>/config/<ENVIRONMENT>.json`. `myntra` deliberately ships `local.json` only,
@@ -49,7 +49,7 @@ with `CI=true HEADLESS=true ENVIRONMENT=ci pytest <test>`.
 
 **"It passed on the second attempt."** That is a finding, not a pass. `pytest.ini` applies
 `--reruns 1` to every run and a non-zero app `retry_count` adds another layer
-(`conftest.py:78`). Report the rerun and investigate the instability.
+(`pwpf/plugin.py:124`). Report the rerun and investigate the instability.
 
 **A live-site test ran in CI.** It should be impossible: every pytest invocation in the workflow
 carries `-m "not production"`, and `tests/test_ci_production_exclusion.py` fails if one loses it.

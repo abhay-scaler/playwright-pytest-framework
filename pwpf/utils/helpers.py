@@ -6,7 +6,7 @@ from typing import Optional
 
 from playwright.sync_api import Page
 
-from config.settings import ensure_dir, screenshot_dir
+from pwpf.config.settings import ensure_dir, screenshot_dir
 
 
 def take_screenshot(page: Page, name: Optional[str] = None) -> str:

@@ -28,7 +28,7 @@ expected results, and carry the markers that decide where they run.
    API-level tests, `production` for **every** test that touches a live third-party site, and
    `scenario("<id>")` naming the catalog scenario the test implements — one marker per scenario
    covered. Then fill that scenario's `automation.test`, `markers` and `implemented: true` in
-   `apps/<app>/scenarios/<feature>.yaml`, and run `python -m ai_testing.validate_catalog`: it
+   `apps/<app>/scenarios/<feature>.yaml`, and run `python -m pwpf.ai_testing.validate_catalog`: it
    fails if the mapping, the marker or the lifecycle status disagree.
    Markers select suites — the folder does not — so a test in `smoke/` without
    `@pytest.mark.smoke` silently never runs in the smoke gate. All markers must be registered in
@@ -57,7 +57,7 @@ Real test files, listed as `path | scenario ids | markers`, plus the actual outp
 
 ```
 ruff check . && black --check . && mypy .
-python -m ai_testing.validate_catalog
+python -m pwpf.ai_testing.validate_catalog
 pytest --collect-only -q tests/<app>
 pytest --collect-only -q -m "not production"      # confirm live-site tests are deselected
 pytest <the non-production tests you added> -q    # real run, real output

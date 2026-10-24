@@ -16,7 +16,7 @@ def test_home_page_loads_successfully(page, app_config):
 
     Implements MNY-HOME-001 in apps/myntra/scenarios/shopping_journey.yaml, which is
     awaiting human review - the scenario is not approved, and the mapping is checked by
-    `python -m ai_testing.validate_catalog`.
+    `python -m pwpf.ai_testing.validate_catalog`.
 
     `production`-marked: this drives a live third-party site, so it never runs in
     CI (see .github/workflows/ci.yml) and is opt-in locally with `-m production`.

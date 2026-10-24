@@ -39,12 +39,12 @@ nonsense.
 
 Templates: [feature_brief.md](templates/feature_brief.md),
 [scenario_template.yaml](templates/scenario_template.yaml). Schema:
-[schemas/scenario.schema.json](schemas/scenario.schema.json), validated by
-[validate_catalog.py](validate_catalog.py):
+[scenario.schema.json](../pwpf/ai_testing/schemas/scenario.schema.json), validated by
+[validate_catalog.py](../pwpf/ai_testing/validate_catalog.py):
 
 ```bash
 pip install -r ../requirements-ai.txt     # once; kept out of the test-runtime lock
-python -m ai_testing.validate_catalog     # schema, lifecycle rules, scenario-to-test mappings
+python -m pwpf.ai_testing.validate_catalog     # schema, lifecycle rules, scenario-to-test mappings
 ```
 
 Approved scenarios are committed to `apps/<app>/scenarios/<feature>.yaml` and the implementing
@@ -75,9 +75,9 @@ Every prompt inherits these. They are repeated in no prompt; prompts reference
    the DOM or a response. What it *should* do comes from the feature brief or a human. Never
    derive an expected business result from the application's current behaviour alone.
 7. **Respect the layers.** `tests/<app>/` asserts, `apps/<app>/pages/` acts,
-   `apps/<app>/locators/` holds selectors as data, `core/` is shared and app-agnostic. Changes
-   to `core/`, the root `conftest.py`, `pytest.ini` or the CI workflow are shared-framework
-   changes: propose them separately, with a reason, and never as a side effect of adding a test.
+   `apps/<app>/locators/` holds selectors as data, `pwpf/core/` is shared and app-agnostic.
+   Changes to `pwpf/`, `pytest.ini` or the CI workflow are shared-framework changes: propose
+   them separately, with a reason, and never as a side effect of adding a test.
 8. **Production safety.** The live production target (`myntra`) is for supervised, explicitly
    authorized local exploration only. Never write or run checkout, payment, order-placement or
    account-creation steps; never bypass a CAPTCHA, OTP or access control; never generate load or
@@ -85,7 +85,7 @@ Every prompt inherits these. They are repeated in no prompt; prompts reference
    [docs/ai-testing/README.md § Production safety](../docs/ai-testing/README.md#production-safety).
 9. **No secrets in a prompt.** Never paste credentials, cookies, `storage_state`, tokens, `.env`
    contents or personal data into an assistant, and never put a secret value in a config file —
-   only the *name* of an environment variable (`core/app_config.py:62`).
+   only the *name* of an environment variable (`pwpf/core/app_config.py:62`).
 10. **Humans approve.** An assistant may propose scenarios, code and diagnoses. A human approves
     business expectations, authorizes production execution, and merges. No assistant decides that
     a scenario is `APPROVED` or `ACTIVE_REGRESSION`.
@@ -95,13 +95,13 @@ Every prompt inherits these. They are repeated in no prompt; prompts reference
 Read from the source on this branch. If one of these disagrees with the code, the code wins and
 this table needs fixing.
 
-**Fixtures** — root [conftest.py](../conftest.py): `playwright_context` (session), `browser`
+**Fixtures** — plugin [pwpf/plugin.py](../pwpf/plugin.py): `playwright_context` (session), `browser`
 (session), `browser_context_args` (function), `context` (function), `page` (function), plus an
 autouse Allure labeller. Per application: `app_config` (session), defined in
 `tests/<app>/conftest.py` as `load_app_config("<app>")` and nowhere else. A test that needs a
 browser requests `page`; one that does not never starts a browser.
 
-**`BasePage`** — [core/base_page.py](../core/base_page.py), the only shared page-object base:
+**`BasePage`** — [pwpf/core/base_page.py](../pwpf/core/base_page.py), the only shared page-object base:
 `goto(url, wait_until="load")`, `wait_for_url(url, timeout)`, `click(selector, timeout)`,
 `click_role_link(name, timeout)`, `click_role_button(name, timeout)`, `fill(selector, value)`,
 `get_text(selector)`, `is_visible(selector, timeout)` (polls until visible, unlike Playwright's
@@ -109,34 +109,34 @@ own `is_visible`), `take_screenshot(name)`, `expect_title(title, timeout)`,
 `dismiss_if_visible(selector, timeout)`. It is constructed as `BasePage(page, config)`; `page`
 objects for real applications redeclare `config: AppConfig` to make it non-optional.
 
-**`AppConfig`** — [core/app_config.py](../core/app_config.py): fields `app_name`, `environment`,
+**`AppConfig`** — [pwpf/core/app_config.py](../pwpf/core/app_config.py): fields `app_name`, `environment`,
 `base_url`, `action_timeout`, `retry_count`, `ignore_https_errors`, `secrets`, `extra`, and the
 method `secret(name)`. Loaded from `apps/<app>/config/<ENVIRONMENT>.json`, `ENVIRONMENT`
 defaulting to `local`. **Only** `base_url`, `action_timeout`, `retry_count`,
 `ignore_https_errors` and `secrets` are recognised keys; anything else is swept into
 `extra` **silently**, so a misspelled or invented key never takes effect and never errors. Check
-a new key against `_KNOWN_KEYS` (`core/app_config.py:12`).
+a new key against `_KNOWN_KEYS` (`pwpf/core/app_config.py:12`).
 
 **API calls** — `api_request_context(base_url, timeout, config)`, a context manager in
-[core/api_client.py](../core/api_client.py). It shares no cookies with the browser fixtures.
+[pwpf/core/api_client.py](../pwpf/core/api_client.py). It shares no cookies with the browser fixtures.
 
 **Helpers** — `take_screenshot(page, name)` and `read_text_file(path)` in
-[utils/helpers.py](../utils/helpers.py); `get_logger(__name__)` in
-[utils/logger.py](../utils/logger.py).
+[pwpf/utils/helpers.py](../pwpf/utils/helpers.py); `get_logger(__name__)` in
+[pwpf/utils/logger.py](../pwpf/utils/logger.py).
 
 **Markers** — registered in [pytest.ini](../pytest.ini): `smoke`, `ui`, `api`, `regression`,
-`production`, `scenario(id)`, and `app(name)` which the root conftest applies automatically from
+`production`, `scenario(id)`, and `app(name)` which the plugin applies automatically from
 the test's path. `--strict-markers` is on, so an unregistered marker is an error. Each
 `scenario(id)` is also attached as an Allure label named `scenario` by the autouse fixture in
-the root `conftest.py`, beside `application`, `browser` and `environment`.
+`pwpf/plugin.py`, beside `application`, `browser` and `environment`.
 
 **Application discovery is structural.** A test belongs to the application named by its first
-path segment under `tests/`, provided `apps/<that name>/` exists (`conftest.py:44`). There is no
+path segment under `tests/`, provided `apps/<that name>/` exists (`pwpf/plugin.py:86`). There is no
 registry to edit — and therefore a new `tests/<app>/` folder joins the regression suite by
 itself, which is why live-site tests must carry `@pytest.mark.production`.
 
 **Retries** — `pytest.ini` applies `--reruns 1` to every run, and a non-zero `retry_count` in an
-app's config adds a second, independent `flaky(reruns=N)` layer on top (`conftest.py:78`). Two
+app's config adds a second, independent `flaky(reruns=N)` layer on top (`pwpf/plugin.py:124`). Two
 layers hide instability; leave `retry_count` at `0` unless there is a reason on record.
 
 **Failure evidence**, captured automatically and only on failure: screenshot, trace and video

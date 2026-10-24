@@ -4,8 +4,8 @@ import logging
 import os
 from typing import Optional
 
-from config import settings
-from config.paths import ProjectRootError
+from pwpf.config import settings
+from pwpf.config.paths import ProjectRootError
 
 # Set by pytest-xdist inside each worker process (e.g. "gw0", "gw1"); absent
 # when running serially, in which case every log line still goes somewhere

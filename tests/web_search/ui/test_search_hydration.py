@@ -16,8 +16,8 @@ from playwright.sync_api import expect
 
 from apps.web_search.locators.home_page_locators import HomePageLocators
 from apps.web_search.pages.home_page import HomePage
-from config.paths import project_root
-from core.app_config import load_app_config
+from pwpf.config.paths import project_root
+from pwpf.core.app_config import load_app_config
 
 FIXTURE = project_root() / "apps" / "web_search" / "testdata" / "hydration_fixture.html"
 
