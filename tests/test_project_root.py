@@ -257,7 +257,12 @@ def test_application_discovery_uses_the_resolved_root(tmp_path):
 
 
 def _run(code_or_args: list[str], cwd: Path, **env_overrides) -> subprocess.CompletedProcess:
-    env = {k: v for k, v in os.environ.items() if k != ROOT_ENV_VAR}
+    # The consumer subprocess inherits neither the parent run's project root nor
+    # its environment selection: on CI the workflow exports ENVIRONMENT=ci, which
+    # would silently make a consumer look for apps/<app>/config/ci.json while the
+    # fixture below writes local.json. A test must decide both for itself.
+    inherited = {ROOT_ENV_VAR, "ENVIRONMENT"}
+    env = {k: v for k, v in os.environ.items() if k not in inherited}
     env["PYTHONPATH"] = str(FRAMEWORK_ROOT)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env.update(env_overrides)
@@ -302,6 +307,9 @@ def test_a_consumer_resolves_its_own_application_config(tmp_path):
             "print(c.base_url, c.action_timeout)",
         ],
         root,
+        # Stated rather than inherited: _consumer writes local.json, so this is
+        # the environment whose file it should find.
+        ENVIRONMENT="local",
     )
 
     assert result.returncode == 0, result.stderr
