@@ -253,7 +253,13 @@ jobs:
           ENVIRONMENT: ci
         # Still excludes `production`: quarantine does not relax the live-site
         # policy, and this job is not a way to run live-site tests in CI.
-        run: pytest -m "quarantined and not production" -n auto --junitxml=reports/junit-quarantine.xml
+        #
+        # `|| test $? -eq 5` tolerates pytest's "no tests collected" exit code,
+        # which is the normal state while nothing is quarantined - an empty
+        # quarantine list should read as nothing to do, not as a failing job.
+        # Any real failure still surfaces (and still gates nothing, since this
+        # job is continue-on-error).
+        run: pytest -m "quarantined and not production" -n auto --junitxml=reports/junit-quarantine.xml || test $? -eq 5
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2

@@ -25,14 +25,13 @@ PYTEST_INI = BASE_DIR / "pytest.ini"
 DESIGN = BASE_DIR / "DESIGN.md"
 TESTS_DIR = BASE_DIR / "tests"
 
-# The complete quarantine list. Adding to it is a deliberate act: this test
-# fails until the new entry is here AND documented in DESIGN.md with its
-# evidence and the conditions for returning it to the blocking gates.
-QUARANTINED = frozenset(
-    {
-        "tests/web_search/smoke/test_web_search.py::test_web_search",
-    }
-)
+# The complete quarantine list, currently empty: the one test that was in it had
+# its hydration race fixed and is back in the blocking smoke gate. The mechanism
+# stays, because the next unstable test should be held here deliberately rather
+# than tolerated. Adding an entry is a deliberate act: these checks fail until the
+# node id is listed here AND documented in DESIGN.md with its evidence and its
+# exit criteria.
+QUARANTINED: frozenset[str] = frozenset()
 
 _PYTEST_COMMAND = re.compile(r"(?:^|[\s:|&;(])pytest(?:\s|$)")
 _MARKER_OPTION = re.compile(r"-m\s+(?:\"([^\"]*)\"|'([^']*)'|(\S+))")
@@ -72,9 +71,9 @@ def _marker_expression(command: str) -> str:
     return next((group for group in match.groups() if group is not None), "")
 
 
-def _quarantined_tests() -> dict[str, str | None]:
-    """Node id -> docstring, for every test carrying @pytest.mark.quarantined."""
-    found: dict[str, str | None] = {}
+def _quarantined_tests() -> dict[str, tuple[str | None, frozenset[str]]]:
+    """Node id -> (docstring, markers), for every @pytest.mark.quarantined test."""
+    found: dict[str, tuple[str | None, frozenset[str]]] = {}
     for path in sorted(TESTS_DIR.rglob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
@@ -90,7 +89,7 @@ def _quarantined_tests() -> dict[str, str | None]:
                         markers.add(target.attr)
             if "quarantined" in markers:
                 nodeid = f"{path.relative_to(BASE_DIR).as_posix()}::{node.name}"
-                found[nodeid] = ast.get_docstring(node)
+                found[nodeid] = (ast.get_docstring(node), frozenset(markers))
     return found
 
 
@@ -113,7 +112,9 @@ def test_only_the_recorded_tests_are_quarantined():
 
 
 def test_every_quarantined_test_explains_itself():
-    undocumented = [nodeid for nodeid, doc in _quarantined_tests().items() if not doc]
+    undocumented = [
+        nodeid for nodeid, (docstring, _) in _quarantined_tests().items() if not docstring
+    ]
     assert not undocumented, (
         "A quarantined test must say in its docstring why it is quarantined and how it gets "
         f"out: {undocumented}"
@@ -166,8 +167,17 @@ def test_the_quarantine_job_does_not_relax_the_production_policy():
 
 
 def test_quarantine_does_not_remove_a_test_from_its_suite():
-    """The marker is additive. A quarantined smoke test keeps its `smoke` marker, so
-    `pytest -m smoke` locally still runs it and the test stays explicitly runnable."""
-    source = (BASE_DIR / "tests/web_search/smoke/test_web_search.py").read_text(encoding="utf-8")
-    assert "@pytest.mark.smoke" in source
-    assert "@pytest.mark.ui" in source
+    """The marker is additive: a quarantined test keeps the suite markers it had, so
+    `pytest -m smoke` locally still runs it and it stays explicitly runnable. Checked
+    against whatever is quarantined rather than one hard-coded node id, so it keeps
+    working as the list changes - and passes vacuously while the list is empty."""
+    suite_markers = {"smoke", "ui", "api", "regression"}
+    stripped = sorted(
+        nodeid
+        for nodeid, (_, markers) in _quarantined_tests().items()
+        if not markers & suite_markers
+    )
+    assert not stripped, (
+        "A quarantined test must keep its suite markers - quarantine excludes it from the "
+        f"blocking gates, it does not take it out of its suite: {stripped}"
+    )
