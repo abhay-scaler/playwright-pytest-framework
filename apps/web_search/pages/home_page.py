@@ -22,6 +22,15 @@ class HomePage(BasePage):
     @allure.step("Open web_search homepage")
     def open(self) -> None:
         self.goto(self.config.base_url, wait_until="domcontentloaded")
+        # `domcontentloaded` fires while the page is still server-rendered markup:
+        # the search button exists, is visible and is enabled, but its handler is
+        # not attached yet, so a click lands on it and does nothing - the page then
+        # looks healthy while the modal never opens. Waiting for the app's own
+        # hydration flag synchronises on that state rather than on elapsed time; a
+        # page that never hydrates fails here, loudly, instead of further down.
+        self.page.locator(HomePageLocators.HYDRATED).wait_for(
+            state="attached", timeout=self.config.action_timeout
+        )
         # No-op today (playwright.dev has no consent banner) but wired through
         # config.extra so an app that does need one (e.g. a site with a GDPR
         # cookie wall) can set "consent_selector" in its config without any

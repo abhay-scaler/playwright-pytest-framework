@@ -242,7 +242,7 @@ pytest -m ui -q
 pytest -m api -q
 
 # Known-unstable tests: excluded from the blocking gates, still runnable
-pytest -m quarantined -q                        # see DESIGN.md section 8 for why each one is in
+pytest -m quarantined -q                        # currently empty; DESIGN.md section 8 keeps the record
 
 # Production-site tests (opt-in, local only - excluded from every CI job)
 HEADLESS=false pytest -m production -q          # headed and supervised: the intended way
@@ -429,10 +429,11 @@ current scope, not oversights, and each has a clear extension path:
 - **Two locator modules share the same class name** (`HomePageLocators`, in two different
   applications) — harmless since imports are fully qualified, but worth knowing if you're
   searching the codebase by class name.
-- **One quarantined test.** `tests/web_search/smoke/test_web_search.py::test_web_search` races
-  Algolia DocSearch's hydration on `playwright.dev` and is excluded from the blocking CI gates
-  until that is fixed; it still runs in the non-blocking `Quarantined` job and under
-  `pytest -m quarantined`. Diagnosis, evidence and exit criteria: [DESIGN.md](DESIGN.md) §8.
+- **One live-site test still gates pull requests.** `tests/web_search` drives `playwright.dev`,
+  a third party's production site, in the smoke gate. Its hydration race is fixed and the
+  interaction contract is covered locally by `tests/web_search/ui/test_search_hydration.py`, but
+  whether a docs search on someone else's site belongs in a blocking gate at all is still an open
+  decision — see [DESIGN.md](DESIGN.md) §8.
 - **Single browser engine per run.** `BROWSER` selects one engine for the whole run; the
   cross-browser CI job achieves coverage via separate full-suite runs per engine, not multiple
   engines interleaved within one invocation.

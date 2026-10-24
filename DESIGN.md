@@ -59,6 +59,8 @@ apps/
       home_page.py
     locators/
       home_page_locators.py
+    testdata/
+      hydration_fixture.html   #   local stand-in for a late-hydrating page (see §8)
   uitesting_playground/        # a multi-page app (demonstrates >1 page object per app)
     config/
       local.json
@@ -461,7 +463,11 @@ Quarantine is a holding state with an exit criterion, not a bin. It is never the
 failure, and a fixed sleep, a longer timeout or an extra rerun is never the fix either — those
 change the report, not the behaviour.
 
-**`tests/web_search/smoke/test_web_search.py::test_web_search` — quarantined 2026-10-24.**
+**Currently quarantined: nothing.** The list below is the record of what has been through
+quarantine and how it left.
+
+**`tests/web_search/smoke/test_web_search.py::test_web_search` — quarantined 2026-10-24,
+repaired and restored to the blocking smoke gate the same day.**
 
 - **Symptom**: `Locator.wait_for: Timeout 15000ms exceeded` waiting for
   `.DocSearch-Modal input[type='search']` to be visible, after `HomePage.search` clicks the
@@ -478,22 +484,29 @@ change the report, not the behaviour.
 - **Reproduced on a pristine baseline**: the same failure occurs on commit `36aac2f` in a
   separate worktree, so it predates the AI test-engineering work and is not a regression from
   it. It fails on a developer machine as readily as in CI.
-- **Exit criteria** — all three, then the marker comes off and the entry is removed from
-  `QUARANTINED` in `tests/test_quarantine_policy.py`:
-  1. The race is fixed in the application layer, without a fixed wait: click the search
-     control and wait for the modal to actually open, retrying the click if it does not (the
-     button itself advertises a keyboard shortcut via `aria-keyshortcuts`, which is another
-     way in). Whatever the shape, it must wait for state, not for time — this framework has
-     no `time.sleep` anywhere, and this is not where that starts.
-  2. Ten consecutive green runs locally on a cold cache, plus a green non-blocking CI job.
-  3. The fix is reviewed like any other change; `pytest -m "smoke and not production"` stays
-     green afterwards.
-- **Owner**: unassigned — the repository has no `CODEOWNERS`. Whoever takes it has the
-  diagnosis above and needs an hour, not an investigation.
-- **Open question worth holding onto**: this test gates PRs against a third party's live site,
-  which §6 already argues against. Fixing the race removes the symptom; whether a docs search
-  on someone else's site belongs in the PR gate at all is a separate decision, tied to the
-  sanctioned-target question in "Production-site applications and the CI exclusion" above.
+- **The repair**: `HomePage.open` now waits for `html[data-has-hydrated="true"]` — Docusaurus's
+  own hydration flag, served as `false` and flipped to `true` by the client bundle — before
+  anything is clicked. It synchronises on the application's state rather than on elapsed time:
+  no `time.sleep`, no `wait_for_timeout`, no raised timeout (`action_timeout` is unchanged at
+  15s), no added reruns, and the assertion that the modal and its input actually appear is
+  untouched. The page object clicks the search control exactly once, so there is no retry that
+  could toggle an open modal shut.
+- **Measurements behind it**: with the fix, clicking straight after the readiness signal opened
+  the modal 5/5 in a probe and the test then passed 10/10 as ten separate `pytest` processes
+  (each launching its own browser, no reruns, 1.4–4.2s per run). Without it, the same click
+  failed 3/3. The deterministic half of that evidence is now a test:
+  `tests/web_search/ui/test_search_hydration.py` drives a local fixture whose button hydrates
+  late, and all three of its cases fail against the unfixed page object.
+- **What is not yet established**: the non-blocking CI job has not run, because nothing has been
+  pushed. The first CI run of the restored test is that confirmation; if it fails there, the
+  marker goes back on and this record reopens.
+- **Still open, and separate from the repair**: this test gates PRs against a third party's
+  live site, which §6 already argues against. Fixing the race removed the defect; whether a docs
+  search on someone else's site belongs in the blocking PR gate at all is an architecture
+  decision, tied to the sanctioned-target question in "Production-site applications and the CI
+  exclusion" above. The deterministic fixture tests mean the interaction contract is covered
+  either way, so that decision can be taken on its merits rather than under the pressure of a
+  red gate.
 
 ## 9. Design Principles
 
