@@ -74,13 +74,18 @@ jobs:
           CI: true
           HEADLESS: true
           ENVIRONMENT: ci
-        run: pytest tests/test_*.py --junitxml=reports/junit-framework.xml
+        # -m "not production" on every pytest invocation in this workflow: tests marked
+        # `production` drive a live third-party site and are local-only by policy (see
+        # pytest.ini and DESIGN.md). The marker is not an enforcement mechanism on its
+        # own - these four commands are, and tests/test_ci_production_exclusion.py
+        # fails if any pytest invocation here loses the exclusion.
+        run: pytest tests/test_*.py -m "not production" --junitxml=reports/junit-framework.xml
       - name: Smoke suite
         env:
           CI: true
           HEADLESS: true
           ENVIRONMENT: ci
-        run: pytest -m smoke -n auto --junitxml=reports/junit-smoke.xml
+        run: pytest -m "smoke and not production" -n auto --junitxml=reports/junit-smoke.xml
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -126,7 +131,7 @@ jobs:
         # Sharded naturally by application today (tests/<app>/...); the same
         # apps/<app> boundary this framework already uses is what a future
         # CI matrix would shard on, without any new tooling.
-        run: pytest -n auto --junitxml=reports/junit.xml
+        run: pytest -m "not production" -n auto --junitxml=reports/junit.xml
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2
@@ -176,7 +181,7 @@ jobs:
           HEADLESS: true
           ENVIRONMENT: ci
           BROWSER: ${{ matrix.browser }}
-        run: pytest -n auto --junitxml=reports/junit-${{ matrix.browser }}.xml
+        run: pytest -m "not production" -n auto --junitxml=reports/junit-${{ matrix.browser }}.xml
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2

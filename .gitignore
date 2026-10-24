@@ -52,6 +52,10 @@ coverage.xml
 cover/
 playwright-report/
 reports/
+# Temporary AI-assisted test engineering working artifacts: raw Codegen recordings,
+# generated drafts awaiting review, exploration notes. Never approved scenarios,
+# page objects, tests or documentation - those live in apps/, tests/ and the repo docs.
+artifacts/ai-work/
 screenshots/
 logs/
 traces/

@@ -69,6 +69,13 @@ apps/
     locators/
       home_page_locators.py
       dynamic_id_page_locators.py
+  myntra/                      # live production site - exploration target, never a CI gate
+    config/
+      local.json               #   local only: deliberately no ci.json (see §8)
+    pages/
+      home_page.py
+    locators/
+      home_page_locators.py
 
 core/
   base_page.py                 # shared Playwright actions used by every page object
@@ -249,6 +256,20 @@ Two design choices worth calling out:
   whose environment has a real certificate worth validating sets
   `"ignore_https_errors": false` in its own config JSON — nothing else changes, and every existing
   app's config simply omits the key.
+- **Unknown keys are stored, not validated.** `load_app_config` keeps only the five keys in
+  `_KNOWN_KEYS` (`base_url`, `action_timeout`, `retry_count`, `ignore_https_errors`,
+  `secrets`) as typed fields and sweeps everything else into `AppConfig.extra`. That is what
+  makes an app-specific setting like `consent_selector` possible without a framework change,
+  but it also means a misspelled or invented key (`timeout_ms` instead of `action_timeout`,
+  say) is accepted in silence and simply never takes effect. Check a new key against
+  `_KNOWN_KEYS` before relying on it. `ignore_https_errors` is the one key that raises on a
+  wrong type, because silently coercing it would flip a security-relevant setting.
+- **One config file per environment an app actually runs in.** `myntra` ships `local.json`
+  only: its tests are `production`-marked and never execute in CI, so a `ci.json` would be
+  dead weight that implies the opposite. Its `retry_count` is `0` on purpose - `pytest.ini`
+  already applies `--reruns 1` to the whole run, and a per-app `retry_count` stacks a second,
+  independent rerun layer on top of it (§3, step 1), which is how real instability on a live
+  site gets hidden rather than reported.
 - **Test data**: `sample_app` ships a static local HTML fixture inside its own `testdata/`
   folder, loaded via `file://` with zero network dependency. `web_search` needs no static test
   data — it drives a real external site (`playwright.dev`'s own docs search).
@@ -353,10 +374,10 @@ feedback without giving up full-suite and cross-browser coverage:
    (push, PR, schedule, manual dispatch), before any job installs a browser, so a lint/type error
    fails in seconds rather than after a multi-minute Playwright install.
 2. **PR Smoke** (`pull_request` only) — the framework's own tests (`tests/test_*.py`, fast, no
-   browser) plus `-m smoke`, Chromium only. Deliberately narrow: full regression coverage belongs
-   to the jobs below, not to every PR.
+   browser) plus `-m "smoke and not production"`, Chromium only. Deliberately narrow: full
+   regression coverage belongs to the jobs below, not to every PR.
 3. **Regression** (push to `main`/`dev`, nightly, manual dispatch) — the full suite, Chromium,
-   `pytest -n auto`.
+   `pytest -m "not production" -n auto`.
 4. **Cross-Browser** (nightly, or manual dispatch with the `cross_browser` input) — the full suite
    against Firefox and WebKit, as a matrix. Not run on every PR — it roughly triples runtime for
    coverage most changes don't need.
@@ -374,11 +395,48 @@ Each browser-driving job:
 
 Because `testpaths = tests` in `pytest.ini` is recursive and application membership is inferred
 from the path, **onboarding a new application requires no CI changes** for its tests to run — they
-are auto-discovered the moment `tests/<new_app>/` exists. The `apps/<app>/` boundary this
+are auto-discovered the moment `tests/<new_app>/` exists. That convenience cuts both ways, and
+the subsection below is the counterweight. The `apps/<app>/` boundary this
 framework already uses is also what a future CI matrix would shard on (one job per app) if the
 suite ever grows large enough to need it — no new tooling required to get there, just a matrix
 entry keyed on `tests/<app>` when that day comes. Not done today because three demo applications
 don't justify the added CI complexity.
+
+### Production-site applications and the CI exclusion
+
+Auto-discovery means a new `tests/<app>/` folder joins the regression suite and the nightly
+cross-browser sweep by itself, with nobody deciding that it should. For an application that
+drives someone else's live production site, that default is wrong: §6 already records why this
+framework moved `web_search` off `google.com` — a third party's production site that actively
+defends against automated traffic is a poor foundation for a blocking CI gate, because the
+failure has nothing to do with the code under test.
+
+So such tests are labelled and excluded:
+
+- **`@pytest.mark.production`** (registered in `pytest.ini`) marks every test that drives a
+  live third-party site. `myntra` is the only such application today.
+- **Every pytest invocation in `.github/workflows/ci.yml` carries `-m "not production"`** — all
+  four of them: framework self-tests, PR smoke (`"smoke and not production"`), regression, and
+  each cross-browser matrix leg. The marker is a label; these four commands are the control.
+- **`tests/test_ci_production_exclusion.py`** fails if any pytest invocation in the workflow
+  loses the exclusion, if the marker stops being registered, or if a test under a
+  production-only application forgets the marker. It is static analysis — it reads the workflow
+  as text and the tests as an AST, so it needs no browser, no network, and no YAML dependency.
+- **Running them is a deliberate, local act**: `HEADLESS=false pytest -m production`, supervised,
+  on a machine where that is authorized. Checkout, payment, order placement and account
+  creation are out of scope for this phase, so no page object or test for them exists.
+
+A CI-gated end-to-end pilot therefore needs a *sanctioned* target — a local fixture app in the
+shape of `sample_app`, or a site published for automation practice. That choice is still open
+and is tracked as an open item for the AI test-engineering work; until it is made, no
+live-site test is a CI gate.
+
+One policy note, since it is easy to get backwards: a safety control like this exclusion **is**
+an authorized change to the shared framework layer, and an AI-assisted workflow that forbade
+shared-framework edits outright would have blocked the one change that makes production
+exploration safe. The bar is justification, not prohibition — unrelated framework changes still
+need a reason, and a configuration flag that no code reads (`allow_order_placement: false` in a
+YAML file, say) is documentation, never enforcement.
 
 ## 9. Design Principles
 
