@@ -205,6 +205,16 @@ Two layers of configuration exist.
   environment variable; the real value is read from the environment at runtime via
   `AppConfig.secret("api_key")`. No app currently declares any secrets — none of the sample
   applications require credentials.
+- `production_target` — optional, defaults to absent. `true` declares that this application
+  drives a live third-party production site: every test under it must carry
+  `@pytest.mark.production`, and a production-marked test that no declared application owns
+  is equally an error. Nothing in the framework names an application; a new production app
+  becomes visible to the guard by declaring itself.
+  **It is not an `AppConfig` field.** `tests/test_ci_production_exclusion.py` reads it
+  straight from the JSON — every environment file, so a `true` anywhere counts — because
+  `load_app_config` resolves only one environment and would sweep an unrecognised key into
+  `extra` unvalidated. The policy check validates it instead: a malformed file or a
+  non-boolean value fails the check rather than quietly dropping the application from it.
 - Any other key lands in `AppConfig.extra` for app-specific use (for example, an optional
   `consent_selector` a site's cookie banner can be dismissed with). **Unknown keys are
   accepted silently, not rejected** — a misspelling, or an invented key such as `timeout_ms`

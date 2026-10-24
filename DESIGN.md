@@ -427,13 +427,21 @@ So such tests are labelled and excluded:
 
 - **`@pytest.mark.production`** (registered in `pytest.ini`) marks every test that drives a
   live third-party site. `myntra` is the only such application today.
+- **An application declares itself** with `"production_target": true` in its own
+  `apps/<app>/config/<environment>.json`. The guard below discovers production applications
+  from that declaration rather than from a list of names, so the framework layer never has to
+  know which application happens to be the pilot — a step towards an application-neutral
+  framework (§11). A declaration that cannot be read, or that is not a JSON boolean, fails
+  the check instead of quietly dropping the application from it.
 - **Every pytest invocation in `.github/workflows/ci.yml` carries `-m "not production"`** — all
   four of them: framework self-tests, PR smoke (`"smoke and not production"`), regression, and
   each cross-browser matrix leg. The marker is a label; these four commands are the control.
 - **`tests/test_ci_production_exclusion.py`** fails if any pytest invocation in the workflow
-  loses the exclusion, if the marker stops being registered, or if a test under a
-  production-only application forgets the marker. It is static analysis — it reads the workflow
-  as text and the tests as an AST, so it needs no browser, no network, and no YAML dependency.
+  loses the exclusion, if the marker stops being registered, if a test under a declared
+  production application forgets the marker, or if a production-marked test turns up under an
+  application that never declared itself. It is static analysis — it reads the workflow as
+  text, the configs as JSON and the tests as an AST, so it needs no browser, no network, and
+  no YAML dependency.
 - **Running them is a deliberate, local act**: `HEADLESS=false pytest -m production`, supervised,
   on a machine where that is authorized. Checkout, payment, order placement and account
   creation are out of scope for this phase, so no page object or test for them exists.
