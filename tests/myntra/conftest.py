@@ -1,0 +1,8 @@
+import pytest
+
+from core.app_config import load_app_config
+
+
+@pytest.fixture(scope="session")
+def app_config():
+    return load_app_config("myntra")

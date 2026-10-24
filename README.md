@@ -202,7 +202,11 @@ Two layers of configuration exist.
   `AppConfig.secret("api_key")`. No app currently declares any secrets — none of the sample
   applications require credentials.
 - Any other key lands in `AppConfig.extra` for app-specific use (for example, an optional
-  `consent_selector` a site's cookie banner can be dismissed with).
+  `consent_selector` a site's cookie banner can be dismissed with). **Unknown keys are
+  accepted silently, not rejected** — a misspelling, or an invented key such as `timeout_ms`
+  instead of `action_timeout`, lands in `extra` and simply never takes effect. Check a new
+  key against `_KNOWN_KEYS` in `core/app_config.py` before relying on it;
+  `ignore_https_errors` is the only key that fails loudly on a wrong type.
 
 Example combining both layers:
 
@@ -233,6 +237,11 @@ pytest -m smoke -q
 pytest -m ui -q
 pytest -m api -q
 
+# Production-site tests (opt-in, local only - excluded from every CI job)
+HEADLESS=false pytest -m production -q          # headed and supervised: the intended way
+pytest tests/myntra -m production -q            # one production application
+pytest -m "not production" -q                   # what CI runs: everything else
+
 # In parallel
 pytest -n auto -q
 
@@ -244,8 +253,9 @@ pytest tests/test_*.py -q
 ```
 
 Registered markers (`pytest.ini`): `smoke`, `ui`, `api`, `regression` (reserved for future use —
-currently no test carries it), and an auto-applied `app(name)` marker `conftest.py` assigns based
-on each test's file path.
+currently no test carries it), `production` (drives a live third-party site; excluded from every
+CI job, opt in locally as above), and an auto-applied `app(name)` marker `conftest.py` assigns
+based on each test's file path.
 
 ## Reporting and Failure Diagnostics
 
@@ -326,12 +336,16 @@ detect-secrets scan --baseline .secrets.baseline
 without giving up full-suite and cross-browser coverage:
 
 1. **Lint & Type Check** — Ruff, Black, mypy. Every trigger, before any job installs a browser.
-2. **PR Smoke** — framework self-tests plus `-m smoke`, Chromium only. Pull requests only, kept
-   deliberately fast.
+2. **PR Smoke** — framework self-tests plus `-m "smoke and not production"`, Chromium only.
+   Pull requests only, kept deliberately fast.
 3. **Regression** — the full suite, Chromium, `-n auto`. Push to `main`/`dev`, nightly schedule,
    and manual dispatch.
 4. **Cross-Browser** — the full suite against Firefox and WebKit. Nightly, or on demand via
    `workflow_dispatch` — not on every PR, since it roughly triples runtime.
+
+Every pytest invocation in the workflow carries `-m "not production"`, so tests that drive a
+live third-party site are never collected in CI; `tests/test_ci_production_exclusion.py` fails
+if any invocation loses the exclusion. See [DESIGN.md](DESIGN.md) §8.
 
 Both pip and the Playwright browser binary are cached, the latter keyed on the exact pinned
 Playwright version so a dependency bump always installs fresh rather than risking a stale,
