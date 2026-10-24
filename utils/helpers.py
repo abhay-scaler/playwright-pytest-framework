@@ -6,13 +6,15 @@ from typing import Optional
 
 from playwright.sync_api import Page
 
-from config.settings import SCREENSHOT_DIR
+from config.settings import ensure_dir, screenshot_dir
 
 
 def take_screenshot(page: Page, name: Optional[str] = None) -> str:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     screenshot_name = name or f"screenshot_{timestamp}"
-    path = SCREENSHOT_DIR / f"{screenshot_name}.png"
+    # The directory is created here, when a screenshot is actually taken,
+    # rather than as a side effect of importing the settings module.
+    path = ensure_dir(screenshot_dir()) / f"{screenshot_name}.png"
     page.screenshot(path=str(path), full_page=True)
     return str(path)
 

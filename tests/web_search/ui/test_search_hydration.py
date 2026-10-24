@@ -16,10 +16,10 @@ from playwright.sync_api import expect
 
 from apps.web_search.locators.home_page_locators import HomePageLocators
 from apps.web_search.pages.home_page import HomePage
-from config.settings import BASE_DIR
+from config.paths import project_root
 from core.app_config import load_app_config
 
-FIXTURE = BASE_DIR / "apps" / "web_search" / "testdata" / "hydration_fixture.html"
+FIXTURE = project_root() / "apps" / "web_search" / "testdata" / "hydration_fixture.html"
 
 
 def _fixture_config(hydrate: str, action_timeout: int = 5000):

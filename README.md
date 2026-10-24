@@ -132,7 +132,11 @@ ai_testing/                   # its prompt library and templates (no code, no de
 
 Generated at runtime (all git-ignored): `reports/` (HTML + Allure results), `screenshots/`,
 `traces/`, `videos/` (failure artifacts, namespaced per application), `logs/` (per-worker log
-files).
+files). They are created when something is actually written, under the **project root** — not
+under the framework's own directory, and never as a side effect of importing a module. Under
+pytest the root is pytest's own `rootdir`; elsewhere set `PWPF_ROOT`, pass `--root` where a
+command supports it, or run from a directory at or below the one holding `pytest.ini`. The
+full precedence is in `config/paths.py` and [DESIGN.md](DESIGN.md) §6.
 
 ## Prerequisites
 
@@ -178,6 +182,7 @@ Two layers of configuration exist.
 | `BROWSER` | Browser engine: `chromium`, `firefox`, `webkit` | `chromium` |
 | `HEADLESS` | Run headless (`true`/`false`) | `false` locally, `true` when `CI` is set |
 | `ENVIRONMENT` | Selects `apps/<app>/config/<ENVIRONMENT>.json` | `local` |
+| `PWPF_ROOT` | Project root, for entry points that are neither pytest nor able to pass one | unset |
 | `CI` | Auto-forces headless when set | unset |
 | `ACTION_TIMEOUT` | Framework-wide default action timeout (ms) | `10000` |
 | `RETRY_COUNT` | Framework-wide default rerun count | `0` |

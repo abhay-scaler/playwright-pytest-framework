@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from ai_testing.validate_catalog import REPO_ROOT, discover_catalogs, validate_catalog
+from ai_testing.validate_catalog import discover_catalogs, validate_catalog
+from config.paths import project_root
 
 yaml = pytest.importorskip("yaml", reason="requirements-ai.txt is not installed")
 pytest.importorskip("jsonschema", reason="requirements-ai.txt is not installed")
@@ -380,16 +381,16 @@ def test_an_unsupported_schema_version_is_rejected(tmp_path):
 
 
 def test_the_committed_catalog_is_valid():
-    findings = validate_catalog(REPO_ROOT)
+    findings = validate_catalog(project_root())
     assert findings == [], _messages(findings)
-    assert discover_catalogs(REPO_ROOT), "no catalog files were discovered"
+    assert discover_catalogs(project_root()), "no catalog files were discovered"
 
 
 def test_no_committed_scenario_lets_a_live_site_gate_ci():
     """The catalog-side half of the production-exclusion policy. The CI half -
     that every pytest invocation carries -m "not production" - is checked by
     tests/test_ci_production_exclusion.py, which this does not duplicate."""
-    for path in discover_catalogs(REPO_ROOT):
+    for path in discover_catalogs(project_root()):
         document = yaml.safe_load(path.read_text(encoding="utf-8"))
         for scenario in document["scenarios"]:
             environment = scenario["environment"]

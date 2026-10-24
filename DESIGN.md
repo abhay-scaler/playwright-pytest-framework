@@ -261,6 +261,22 @@ Two design choices worth calling out:
   whose environment has a real certificate worth validating sets
   `"ignore_https_errors": false` in its own config JSON — nothing else changes, and every existing
   app's config simply omits the key.
+- **Paths belong to the consuming project, not to the framework.** `config/paths.py`
+  resolves a project root and everything else hangs off it: `apps/`, `tests/`, and the
+  `screenshots/`, `reports/`, `logs/`, `traces/`, `videos/` artifact directories. The root is
+  decided in a fixed order — an explicit root from the caller (the catalog CLI's `--root`),
+  then the active pytest session's `config.rootpath` (pinned by the root conftest in
+  `pytest_configure`, before the xdist guard, so workers agree with the master), then
+  `$PWPF_ROOT`, then the nearest `pytest.ini` at or above the working directory. If none
+  applies it raises rather than guessing: the framework's own location is never a fallback,
+  because once this is installed as a package that location is site-packages, and artifacts
+  would be written beside the installed code while `apps/` was looked for there too. An
+  explicit root is taken at face value; `$PWPF_ROOT` and the upward search must point at a
+  directory containing `pytest.ini`.
+- **Importing a module creates no directories.** Artifact directories are created by whoever
+  writes an artifact (`settings.ensure_dir`), at the moment it is written — so a run that
+  fails nothing leaves no `screenshots/` or `traces/` behind, and merely importing
+  `config.settings` touches the filesystem not at all.
 - **Unknown keys are stored, not validated.** `load_app_config` keeps only the five keys in
   `_KNOWN_KEYS` (`base_url`, `action_timeout`, `retry_count`, `ignore_https_errors`,
   `secrets`) as typed fields and sweeps everything else into `AppConfig.extra`. That is what

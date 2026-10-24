@@ -3,13 +3,13 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from config.settings import ALLURE_RESULTS_DIR
+from config.settings import allure_results_dir
 from utils.logger import get_logger
 
 LOGGER = get_logger(__name__)
 
 
-def clean_allure_results(results_dir: str | Path = ALLURE_RESULTS_DIR) -> int:
+def clean_allure_results(results_dir: str | Path | None = None) -> int:
     """Remove Allure results left over from previous runs.
 
     allure-pytest never clears its own output directory - left alone, every
@@ -18,7 +18,9 @@ def clean_allure_results(results_dir: str | Path = ALLURE_RESULTS_DIR) -> int:
     run that ever happened on this machine. Returns the number of entries
     removed, so a caller can tell "nothing to clean" apart from "cleaned N".
     """
-    results_dir = Path(results_dir)
+    # Resolved on call rather than in the signature's default, so importing
+    # this module does not require a project root to exist yet.
+    results_dir = Path(results_dir) if results_dir is not None else allure_results_dir()
     if not results_dir.exists():
         return 0
 

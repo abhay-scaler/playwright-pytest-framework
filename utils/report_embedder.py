@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from config.settings import SCREENSHOT_DIR
+from config.settings import screenshot_dir as default_screenshot_dir
 from utils.logger import get_logger
 
 LOGGER = get_logger(__name__)
@@ -39,7 +39,7 @@ def _asset_name_for(screenshot_file: Path, screenshot_dir: Path) -> str:
 
 def embed_failure_screenshots(
     report_path: str | Path,
-    screenshot_dir: str | Path = SCREENSHOT_DIR,
+    screenshot_dir: str | Path | None = None,
     since: float | None = None,
 ) -> int:
     """Embed every failure screenshot under screenshot_dir into the generated
@@ -49,7 +49,11 @@ def embed_failure_screenshots(
     failure to find anything.
     """
     report_path = Path(report_path)
-    screenshot_dir = Path(screenshot_dir)
+    # Resolved on call, not in the signature's default: at import time the
+    # project root may not be known yet.
+    screenshot_dir = (
+        Path(screenshot_dir) if screenshot_dir is not None else default_screenshot_dir()
+    )
 
     if not report_path.exists():
         LOGGER.warning("Report not found, skipping screenshot embed: %s", report_path)

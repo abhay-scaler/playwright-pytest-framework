@@ -32,7 +32,11 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterator, Sequence
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from config.paths import ProjectRootError, project_root, set_project_root
+
+# The schema ships with the framework, so it is resolved relative to this file.
+# The catalogs do not: they belong to whichever project is being validated, which
+# is why every entry point below resolves a project root instead of assuming one.
 SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "scenario.schema.json"
 
 # A backwards-incompatible schema change adds a new file and a new entry here,
@@ -454,8 +458,9 @@ def traceability_findings(
 # --------------------------------------------------------------------------- #
 
 
-def validate_catalog(root: Path = REPO_ROOT) -> list[Finding]:
+def validate_catalog(root: Path | None = None) -> list[Finding]:
     """Every finding for every catalog under `root`. Empty means valid."""
+    root = root if root is not None else project_root()
     findings: list[Finding] = []
     markers = registered_markers(root)
     by_id: dict[str, list[tuple[Path, str]]] = {}
@@ -501,11 +506,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--root",
         type=Path,
-        default=REPO_ROOT,
-        help="repository root to validate (default: this checkout)",
+        default=None,
+        help="project root to validate (default: the resolved project root - see "
+        "config/paths.py for the precedence)",
     )
     args = parser.parse_args(argv)
-    root = args.root.resolve()
+    try:
+        root = set_project_root(args.root, source="--root") if args.root else project_root()
+    except ProjectRootError as exc:
+        print(f"{exc}", file=sys.stderr)
+        return 2
 
     catalogs = discover_catalogs(root)
     findings = validate_catalog(root)
