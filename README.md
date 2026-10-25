@@ -383,19 +383,22 @@ detect-secrets scan --baseline .secrets.baseline
 
 ## Continuous Integration
 
-`.github/workflows/ci.yml` runs as six jobs rather than one, so a pull request gets fast feedback
-without giving up full-suite and cross-browser coverage:
+`.github/workflows/ci.yml` runs as seven jobs rather than one, so a pull request gets fast
+feedback without giving up full-suite and cross-browser coverage:
 
 1. **Lint & Type Check** — Ruff, Black, mypy. Every trigger, before any job installs a browser.
 2. **Scenario Catalog** — `python -m pwpf.ai_testing.validate_catalog`. Every trigger; static
    analysis, no pytest and no browser.
-3. **PR Smoke** — framework self-tests plus `-m "smoke and not production"`, Chromium only.
+3. **Installed Package** — `python scripts/verify_installed_package.py`. Every trigger; builds a
+   real wheel, installs it into a clean virtualenv and runs a generated consumer project from
+   there, so the packaging guarantees are enforced rather than assumed.
+4. **PR Smoke** — framework self-tests plus `-m "smoke and not production"`, Chromium only.
    Pull requests only, kept deliberately fast.
-4. **Regression** — the full suite, Chromium, `-n auto`. Push to `main`/`dev`, nightly schedule,
+5. **Regression** — the full suite, Chromium, `-n auto`. Push to `main`/`dev`, nightly schedule,
    and manual dispatch.
-5. **Cross-Browser** — the full suite against Firefox and WebKit. Nightly, or on demand via
+6. **Cross-Browser** — the full suite against Firefox and WebKit. Nightly, or on demand via
    `workflow_dispatch` — not on every PR, since it roughly triples runtime.
-6. **Quarantined (non-blocking)** — `-m "quarantined and not production"` with
+7. **Quarantined (non-blocking)** — `-m "quarantined and not production"` with
    `continue-on-error: true`: known-unstable tests still run and report, but gate nothing.
 
 Every pytest invocation in the workflow carries `-m "not production"`, so tests that drive a

@@ -59,6 +59,36 @@ jobs:
       - name: Validate scenario catalogs and test mappings
         run: python -m pwpf.ai_testing.validate_catalog
 
+  # The packaging guarantees, enforced rather than asserted:
+  # scripts/verify_installed_package.py builds a real wheel, reads its archive
+  # manifest, installs it with its declared dependencies into a clean
+  # virtualenv, generates a separate consumer project and runs everything from
+  # there with this source tree nowhere on the path. Until this job existed the
+  # script was only ever run by hand, so a pyproject.toml edit could break the
+  # distribution and every other job would still pass.
+  #
+  # Nothing is installed first on purpose: the script itself imports only the
+  # standard library, and the whole point is that the wheel's own metadata has
+  # to be sufficient to install and run the plugin. It builds what it needs and
+  # consumes no other job's output, so it can run alone in a fresh environment.
+  # No continue-on-error either - a wheel that does not install is a broken
+  # release, not a warning.
+  installed-package:
+    name: Installed Package
+    needs: lint-and-type-check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          # The dependencies this job resolves are the distribution's own, so
+          # the cache follows the file that declares them.
+          cache-dependency-path: pyproject.toml
+      - name: Verify the installed distribution
+        run: python scripts/verify_installed_package.py
+
   # PR gate. Deliberately narrow: framework self-tests (fast, no browser) +
   # the smoke suite (Chromium only). Keeps PR feedback quick; full coverage
   # runs on merge and nightly instead.
