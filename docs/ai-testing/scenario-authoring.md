@@ -139,6 +139,16 @@ browser or opens a socket, and it never executes a scenario. CI runs it in its o
 in [tests/test_scenario_catalog.py](../../tests/test_scenario_catalog.py) skip when those two
 packages are absent.
 
+**Two things are documented in this one section, and they belong to different halves of the
+repository** ([docs/documentation-split-plan.md](../documentation-split-plan.md) §4.1, decision 4).
+The rule table immediately below describes **framework behaviour**: the codes come from
+`pwpf/ai_testing/validate_catalog.py`, they change when that validator changes, and they would
+follow it into a framework repository. Everything else in this document — the statuses, the
+transition table, who may set `APPROVED`, what a catalog must record — is **this project's
+governance**, and stays here whatever happens to the framework. The table is reproduced rather
+than owned: the validator is authoritative, and a disagreement between the two is a bug in this
+page.
+
 Each finding names the rule it broke, the file and — where it can be identified — the scenario:
 
 | Rule | Fails when |
@@ -163,7 +173,9 @@ Each finding names the rule it broke, the file and — where it can be identifie
 not required to have a test, by design: the catalog is where coverage is planned, not only
 recorded.
 
-**What this does and does not enforce.** It enforces consistency: a status that claims approval
+**What this does and does not enforce** — and the line here is the same ownership line. The
+validator (framework) checks that the record is *consistent*; whether the record is *true* is this
+project's governance, which no amount of framework code can settle. It enforces consistency: a status that claims approval
 must carry an approval record, a mapping must point at a real marked test, a live-site scenario
 cannot claim CI eligibility. It cannot enforce that the recorded approval is genuine — a name
 and a date in YAML are only as true as the review that produced them, and anyone with commit

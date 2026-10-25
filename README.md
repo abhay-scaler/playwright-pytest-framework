@@ -71,21 +71,26 @@ sample app was added with zero edits to the other two.
 
 ## Technology Stack
 
-| Category | Tool |
-|---|---|
-| Browser automation | [Playwright](https://playwright.dev/python/) (sync API) — Chromium, Firefox, WebKit |
-| Test runner | [Pytest](https://docs.pytest.org/) |
-| Parallel execution | [pytest-xdist](https://pytest-xdist.readthedocs.io/) |
-| Retries | [pytest-rerunfailures](https://github.com/pytest-dev/pytest-rerunfailures) |
-| HTML reporting | [pytest-html](https://pytest-html.readthedocs.io/) |
-| Test reporting | [Allure](https://allurereport.org/) (`allure-pytest`) |
-| API testing | Playwright's own `APIRequestContext` (no separate HTTP client) |
-| Linting | [Ruff](https://docs.astral.sh/ruff/) |
-| Formatting | [Black](https://black.readthedocs.io/) |
-| Static typing | [mypy](https://mypy-lang.org/) (incremental, non-strict) |
-| Secret scanning | [detect-secrets](https://github.com/Yelp/detect-secrets) |
-| CI/CD | GitHub Actions |
-| Language / runtime | Python 3.12 |
+The **Owner** column says who declares each tool: the framework distribution (`pyproject.toml`), or
+this consumer project (`requirements.in`, `pytest.ini`, `.pre-commit-config.yaml`). It is the
+boundary a future extraction cuts along, and it is already load-bearing — a consumer that installs
+the framework gets the first group automatically and must choose the second for itself.
+
+| Category | Tool | Owner |
+|---|---|---|
+| Browser automation | [Playwright](https://playwright.dev/python/) (sync API) — Chromium, Firefox, WebKit | framework |
+| Test runner | [Pytest](https://docs.pytest.org/) | framework |
+| Retries | [pytest-rerunfailures](https://github.com/pytest-dev/pytest-rerunfailures) | framework — the plugin applies `flaky` when an app sets `retry_count` |
+| Test reporting | [Allure](https://allurereport.org/) (`allure-pytest`) | framework |
+| HTML reporting | [pytest-html](https://pytest-html.readthedocs.io/) | framework, optional — the `[report]` extra, for the failure-screenshot embedding |
+| API testing | Playwright's own `APIRequestContext` (no separate HTTP client) | framework |
+| Parallel execution | [pytest-xdist](https://pytest-xdist.readthedocs.io/) | **consumer** — nothing in `pwpf/` needs it; `-n auto` is a choice about how a suite is run |
+| Linting | [Ruff](https://docs.astral.sh/ruff/) | both — each repository lints its own code |
+| Formatting | [Black](https://black.readthedocs.io/) | both |
+| Static typing | [mypy](https://mypy-lang.org/) (incremental, non-strict) | both |
+| Secret scanning | [detect-secrets](https://github.com/Yelp/detect-secrets) | consumer — this repository's pre-commit hook |
+| CI/CD | GitHub Actions | both — [the seven jobs and their owners](#continuous-integration) |
+| Language / runtime | Python 3.12 | framework — `requires-python = ">=3.12"` |
 
 ## Project Structure
 
@@ -180,10 +185,19 @@ environment and runs a generated consumer project against it, asserting exactly 
 
 ## Prerequisites
 
-- Python 3.10+ (CI runs 3.12)
+- **Python 3.12+** — the framework declares `requires-python = ">=3.12"`, so pip will refuse to
+  install it on anything older. CI runs 3.12, and 3.12 is the only version this suite has run on.
 - pip
 
 ## Installation
+
+Two different things, and only the second is about this repository:
+
+- **Using the framework in another project** — `pip install playwright-pytest-framework`, plus the
+  extras you need. See [Using the framework in another project](#using-the-framework-in-another-project).
+- **Developing *this* project** — the rest of this section. It installs the pinned lock file, which
+  includes the framework's own dependencies plus this repository's tooling (xdist, detect-secrets,
+  the linters).
 
 ```bash
 python -m venv .venv
@@ -446,44 +460,63 @@ edit — `git status`/`git diff` will show it as an uncommitted local change.
 
 ## Troubleshooting
 
-**"Playwright browser could not be launched" (test skipped, not failed)** — the browser binary
-isn't installed yet:
+Each entry is tagged with where the behaviour lives — **framework** if it is the plugin's doing and
+would follow the distribution into any consumer project, **consumer** if it is about this
+repository's own configuration.
+
+**"Playwright browser could not be launched" (test skipped, not failed)** — *framework* — the
+browser binary isn't installed yet:
 
 ```bash
 python -m playwright install chromium
 ```
 
-**Browser launch fails even after installing** — check the exact error Playwright prints. A
+**Browser launch fails even after installing** — *framework* — check the exact error Playwright
+prints. A
 common cause is an unsupported host OS/browser-build combination (for example, an older macOS
 version than Playwright's currently-pinned Chromium build supports). See
 [Local-Only Overrides](#local-only-overrides) for how to work around this on your own machine
 without changing the framework's shared, default behavior.
 
-**A test fails only in CI, not locally (or vice versa)** — check `ENVIRONMENT` first (`local` vs
-`ci` selects a different `apps/<app>/config/*.json`), then `HEADLESS`/`BROWSER`. Confirm your
-installed versions match `requirements.txt` exactly (`pip install -r requirements.txt` from a
-clean virtualenv) rather than whatever was already installed.
+**A test fails only in CI, not locally (or vice versa)** — *both* — check `ENVIRONMENT` first
+(the framework reads it; which files it selects, `apps/<app>/config/*.json`, is the consumer's),
+then `HEADLESS`/`BROWSER`. Confirm your installed versions match `requirements.txt` exactly
+(`pip install -r requirements.txt` from a clean virtualenv) rather than whatever was already
+installed — that lock file is this repository's.
 
-**A parallel-only failure (`pytest -n auto` fails, `pytest` alone passes)** — check
-`logs/gw*/framework.log` for that worker's output.
+**A parallel-only failure (`pytest -n auto` fails, `pytest` alone passes)** — *both* — running
+in parallel is this repository's choice (xdist is the consumer's dependency), while the per-worker
+log it leaves behind is the framework's: check `logs/gw*/framework.log` for that worker's output.
 
 ## Known Limitations
 
-Honestly documented rather than hidden — these are deliberate absences for the framework's
-current scope, not oversights, and each has a clear extension path:
+Honestly documented rather than hidden — these are deliberate absences, not oversights, and each
+has a clear extension path. Tagged by owner, because an absence in the framework is a different
+conversation from one in this project.
+
+**The framework's**
 
 - **No authentication/session infrastructure.** No current application needs a login, so none
   exists. The intended shape (API-login, `storage_state`, cached per `pytest-xdist` worker) is
   documented in [DESIGN.md](DESIGN.md), ready to build against the first application that needs it.
 - **No test-data factories.** No current application mutates server-side state. A worker-id- and
   UUID-keyed factory convention is documented in `DESIGN.md` for when one does.
-- **No installable package root.** `pyproject.toml` has no `[project]` table — the project isn't
-  `pip install -e .`-able. Imports work via Pytest's rootdir insertion, which is sufficient for
-  running the test suite itself.
+- **Not published to a package index.** The distribution is real — `pyproject.toml` has its
+  `[project]` table, `pip install -e .` works, and CI builds the wheel and proves it installs and
+  runs in a clean virtualenv on every trigger ([Installed Package](#continuous-integration)) — but
+  it is consumed from a path or a Git reference, not from an index. The options and the
+  recommendation are in
+  [docs/framework-extraction-readiness.md](docs/framework-extraction-readiness.md) §4.
+- **Single browser engine per run.** `BROWSER` selects one engine for the whole run; the
+  cross-browser CI job achieves coverage via separate full-suite runs per engine, not multiple
+  engines interleaved within one invocation.
+
+**This project's**
+
 - **Allure results are generated and uploaded, but not rendered or published in CI.** Viewing a
   report requires `allure serve`/`allure generate` run locally against the downloaded results.
 - **Ruff's rule set is intentionally narrow** (`E`, `F`, `I` — style and import order), not
-  `B`/`UP`/security-oriented rules.
+  `B`/`UP`/security-oriented rules. A framework repository would choose its own.
 - **No accessibility testing** (no `axe`-style integration) and **no containerized CI** — neither
   has been a concrete requirement for the current applications.
 - **Two locator modules share the same class name** (`HomePageLocators`, in two different
@@ -494,9 +527,6 @@ current scope, not oversights, and each has a clear extension path:
   interaction contract is covered locally by `tests/web_search/ui/test_search_hydration.py`, but
   whether a docs search on someone else's site belongs in a blocking gate at all is still an open
   decision — see [DESIGN.md](DESIGN.md) §8.
-- **Single browser engine per run.** `BROWSER` selects one engine for the whole run; the
-  cross-browser CI job achieves coverage via separate full-suite runs per engine, not multiple
-  engines interleaved within one invocation.
 
 None of the above are correctness bugs in what's implemented — they're scope boundaries, each with
 a known, documented path forward if a real requirement arrives.
