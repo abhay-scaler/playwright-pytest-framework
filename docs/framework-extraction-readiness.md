@@ -102,7 +102,7 @@ files.
 | `pytest.ini` | Selection policy, markers and reporting flags are the consumer's | Install the framework's `[report]` extra for `--html`, and declare `pytest-xdist` for `-n auto` — settled, §5.1 | Low |
 | `conftest.py` (root, one line) | Exists only to load the plugin from the source tree | **Delete.** The entry point supplies it; the dry run's consumer has no conftest and still gets fixtures and markers [V] | Low |
 | `requirements.in` / `requirements.txt`, `requirements-ai.in` / `requirements-ai.txt` | The test-runtime lock for *this* project | Replace the implicit framework-from-checkout with an explicit pinned dependency (§4) | Medium — this is the actual switchover |
-| `tests/test_ci_production_exclusion.py`, `tests/test_quarantine_policy.py` (2) | Read **this repository's** `.github/workflows/ci.yml` and `pytest.ini` [V] — they police consumer policy, not framework code | `_plugin_generic_suite_dirs()` reads `pwpf/plugin.py` by path; after extraction it must read the **installed** module's source instead | Medium: a real code change, named here so it is not a surprise |
+| `tests/test_ci_production_exclusion.py`, `tests/test_quarantine_policy.py` (2) | Read **this repository's** `.github/workflows/ci.yml` and `pytest.ini` [V] — they police consumer policy, not framework code | None left: the guard resolves the plugin through `find_spec`, so it reads the installed module as readily as the checkout — §5.4 | Low |
 | CI: PR Smoke, Regression, Cross-Browser, Quarantined | Run consumer tests | Add `playwright install` for the resolved version (finding 5.2) and install the framework from its pinned source | Medium |
 | `.pre-commit-config.yaml`, `.secrets.baseline`, `.gitignore` | Repository hygiene | Each repo keeps its own | Low |
 
@@ -181,18 +181,36 @@ installed for the resolved version [V]. Consumer CI must run `python -m playwrig
 installing the framework, keyed on the version pip actually resolved — the existing jobs do this
 from `requirements.txt`'s pin, which will no longer be where the Playwright version comes from.
 
-**5.3 `tests/test_console_logging.py` names a logger that no longer exists.** Lines 8 and 23 pass
-`logger="conftest"` to `caplog.at_level`; the plugin's logger has been `pwpf.plugin` since #8. The
-three tests pass [V], so the records are reaching `caplog` somehow — but a logger configured the way
-`pwpf.utils.logger` configures them (`propagate = False`) is *not* visible to `caplog` in isolation
-[V], so the capture may be incidental rather than what the test intends. Worth resolving before the
-file moves to the framework repository; not a breakage, and out of scope here. **[?]**
+**5.3 `tests/test_console_logging.py` — settled, and the suspicion understated it.** The open
+question was a stale logger name: lines 8 and 23 passed `logger="conftest"` to `caplog.at_level`
+while the plugin's logger has been `pwpf.plugin` since #8, and it was unclear whether the capture
+was incidental. Resolved in #13, which found the name harmless and the tests weak:
 
-**5.4 The policy guards read framework source by path.** `tests/test_ci_production_exclusion.py`
+- The records *are* captured. pytest attaches its capture handler to every already-existing
+  non-propagating logger (`_pytest/logging.py`, `catching_logs.__enter__`), and `pwpf.plugin`'s
+  logger exists from plugin import [V]. Production logging is correct; `propagate = False` stays
+  and nothing in `pwpf/` changed.
+- What was wrong was the assertions. The logged line carries the page URL, and the pages were
+  `data:` URIs quoting the whole script, so a sentinel matched whether or not the listener had
+  logged it; and the negative test asserted an absence over a page that emitted no error at all.
+  With the console listener commented out, the old file passed all three tests and the new one
+  fails three of four [V].
+
+The tests now filter by logger name and level, build pages with `set_content`, carry a control
+error, and pin the capture contract itself.
+
+**5.4 The policy guards read framework source by path — settled.** `tests/test_ci_production_exclusion.py`
 parses `pwpf/plugin.py` as text to keep `GENERIC_SUITE_DIRS` in step with the plugin's own
-constant. After extraction that file is in site-packages, so the guard must locate the installed
-module (`importlib.util.find_spec`) instead of a repository-relative path. Named in §3.2 as a
-required change.
+constant, and read it from `<project root>/pwpf/plugin.py` — a file that does not exist in a
+consumer project that installs the framework. It now resolves the module through
+`importlib.util.find_spec("pwpf.plugin")` (`plugin_source()`), which reads the copy an
+`import pwpf.plugin` would get, in a checkout and in site-packages alike, without importing the
+plugin or its Playwright and Allure dependencies [V]. Every failure to resolve raises with the
+path or spec in the message, so the guard cannot skip its check and call that a pass.
+
+Exercised in both contexts rather than one: the module this session imported, and — in a
+subprocess — a real `pwpf` package tree outside a generated consumer project that has no `pwpf/`
+of its own [V]. That second test fails against the path-based version [V].
 
 **5.5 Documentation is the most entangled asset.** 79 relative links resolve today [V]; of those,
 **9 cross from the AI-toolkit documents into framework paths**, **7 point into consumer paths**, and

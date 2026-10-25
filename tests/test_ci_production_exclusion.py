@@ -35,9 +35,16 @@ tests as an AST, so this adds nothing to the lock file).
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
+import os
 import re
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from pwpf.config.paths import project_root
 
@@ -274,17 +281,56 @@ def test_production_marked_tests_live_only_in_declared_apps():
     )
 
 
-def _plugin_generic_suite_dirs(root: Path | None = None) -> frozenset[str] | None:
-    """The plugin's `_GENERIC_SUITE_DIRS`, read from its source.
+def plugin_source() -> Path:
+    """The `pwpf/plugin.py` this run would actually import.
 
-    Read rather than imported: importing the plugin pulls in Playwright and Allure
-    for what is a static policy check, and this module already reads pytest.ini and
-    the workflow as text. It is also what the previous version had to do when the
-    constant lived in a conftest.py, where `import conftest` was ambiguous across
-    the five conftest files in this repository.
+    Resolved through the import system rather than as `<project root>/pwpf/plugin.py`.
+    The framework is a distribution: in this repository its source sits in the
+    checkout, and in a consumer project that installs it there is no `pwpf/`
+    under the project root at all. `find_spec` reads the authoritative copy in
+    both cases - the one an `import pwpf.plugin` would get - so the guard cannot
+    end up inspecting a stale second copy either.
+
+    It resolves the module without importing it: `find_spec` imports only the
+    parent package, so Playwright and Allure stay out of what is a static policy
+    check (verified - `pwpf.plugin`, `playwright` and `allure*` are absent from
+    `sys.modules` afterwards). Reading the source is also what the previous
+    version had to do when the constant lived in a conftest.py, where
+    `import conftest` was ambiguous across the five conftest files here.
+
+    Every failure mode raises, with the path or spec in the message. A policy
+    guard that cannot find the definition it mirrors must say so, not pass.
     """
-    root = root if root is not None else project_root()
-    source = root / "pwpf" / "plugin.py"
+    try:
+        spec = importlib.util.find_spec("pwpf.plugin")
+    except (ImportError, ValueError) as error:
+        raise AssertionError(
+            f"could not resolve pwpf.plugin, so the ownership rule cannot be checked "
+            f"against the framework's own definition: {error}"
+        ) from error
+    if spec is None:
+        raise AssertionError(
+            "pwpf.plugin is not importable, so the ownership rule cannot be checked "
+            "against the framework's own definition - install the framework or run "
+            "from a checkout that provides it"
+        )
+    if spec.origin is None or not spec.origin.endswith(".py"):
+        raise AssertionError(
+            f"pwpf.plugin resolved to {spec.origin!r}, which is not Python source this "
+            "guard can read - if the framework ships compiled or zipped, the rule has "
+            "to be mirrored some other way"
+        )
+    source = Path(spec.origin)
+    if not source.is_file():
+        raise AssertionError(f"pwpf.plugin resolved to {source}, which does not exist")
+    return source
+
+
+def _plugin_generic_suite_dirs(source: Path | None = None) -> frozenset[str] | None:
+    """The plugin's `_GENERIC_SUITE_DIRS`, read from the source `plugin_source()`
+    resolves (or from an explicit path, which is how the tests below point this
+    at a package outside the project)."""
+    source = source if source is not None else plugin_source()
     tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
     for node in ast.walk(tree):
         if not isinstance(node, ast.Assign):
@@ -309,6 +355,147 @@ def test_the_application_ownership_rule_matches_the_plugin():
         "GENERIC_SUITE_DIRS here has drifted from pwpf/plugin.py's _GENERIC_SUITE_DIRS: "
         f"{sorted(GENERIC_SUITE_DIRS)} vs {sorted(from_plugin)}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Resolving the framework's own definition, in both places it can live: this
+# checkout today, and an installed package once the framework is extracted. The
+# second is exercised against a real package tree outside the project, resolved
+# by the import system in a subprocess - not a patched `find_spec`, which would
+# prove only that the patch works.
+# --------------------------------------------------------------------------- #
+
+
+def test_the_guard_reads_the_module_this_session_actually_imported():
+    """The strongest form of "not a stale second copy": the file the guard reads
+    is the one the running plugin was imported from."""
+    imported = sys.modules.get("pwpf.plugin")
+    assert imported is not None, "the plugin should be loaded in this session"
+
+    assert plugin_source().resolve() == Path(imported.__file__ or "").resolve()
+
+
+def test_resolution_does_not_import_the_plugin_or_its_dependencies():
+    """The reason the guard reads source instead of importing: a static policy
+    check should not pull in Playwright and Allure. Checked in a subprocess,
+    since this session has the plugin loaded already."""
+    script = (
+        "import importlib.util, sys;"
+        "spec = importlib.util.find_spec('pwpf.plugin');"
+        "print(spec.origin);"
+        "print('pwpf.plugin' in sys.modules);"
+        "print(any(m == 'playwright' or m.startswith(('playwright.', 'allure')) "
+        "for m in sys.modules))"
+    )
+    result = _subprocess([sys.executable, "-c", script], cwd=BASE_DIR, pythonpath=BASE_DIR)
+
+    assert result.returncode == 0, result.stderr
+    origin, plugin_imported, dependencies_imported = result.stdout.split()
+    assert Path(origin).resolve() == plugin_source().resolve()
+    assert plugin_imported == "False"
+    assert dependencies_imported == "False"
+
+
+def test_the_rule_is_checked_against_an_installed_package_outside_the_project(tmp_path):
+    """The post-extraction shape: a consumer project with no `pwpf/` of its own,
+    and the framework resolved from somewhere else entirely. The path-based
+    version of this guard could not run here at all."""
+    site_packages = tmp_path / "site-packages"
+    shutil.copytree(
+        BASE_DIR / "pwpf",
+        site_packages / "pwpf",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    consumer = tmp_path / "consumer"
+    (consumer / "tests").mkdir(parents=True)
+    (consumer / "pytest.ini").write_text("[pytest]\ntestpaths = tests\n", encoding="utf-8")
+    shutil.copy2(Path(__file__), consumer / "tests" / Path(__file__).name)
+    assert not (consumer / "pwpf").exists(), "the point is that the consumer has no framework"
+
+    result = _subprocess(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            f"tests/{Path(__file__).name}",
+            "-k",
+            "matches_the_plugin",
+            "-p",
+            "no:cacheprovider",
+            "-q",
+        ],
+        cwd=consumer,
+        pythonpath=site_packages,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 passed" in result.stdout, result.stdout
+    # And the module it read really was the one outside the consumer project.
+    origin = _subprocess(
+        [
+            sys.executable,
+            "-c",
+            "import importlib.util; print(importlib.util.find_spec('pwpf.plugin').origin)",
+        ],
+        cwd=consumer,
+        pythonpath=site_packages,
+    )
+    assert Path(origin.stdout.strip()) == site_packages / "pwpf" / "plugin.py"
+
+
+def test_an_unresolvable_module_fails_the_guard_instead_of_skipping_it(monkeypatch):
+    """A guard that cannot find what it mirrors must fail. The failure modes are
+    patched here deliberately - they cannot be staged otherwise - while the
+    *working* resolution above is exercised for real."""
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+
+    with pytest.raises(AssertionError, match="not importable"):
+        plugin_source()
+
+
+def test_a_module_without_readable_source_fails_the_guard(monkeypatch, tmp_path):
+    class _Spec:
+        origin = None
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: _Spec())
+    with pytest.raises(AssertionError, match="not Python source"):
+        plugin_source()
+
+    class _Missing:
+        origin = str(tmp_path / "gone" / "plugin.py")
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: _Missing())
+    with pytest.raises(AssertionError, match="does not exist"):
+        plugin_source()
+
+
+def test_a_broken_import_system_fails_the_guard(monkeypatch):
+    def _raise(name: str):
+        raise ValueError("__spec__ is not set")
+
+    monkeypatch.setattr(importlib.util, "find_spec", _raise)
+
+    with pytest.raises(AssertionError, match="could not resolve"):
+        plugin_source()
+
+
+def test_the_definition_cannot_quietly_vanish(tmp_path):
+    """If the constant is renamed away, `_plugin_generic_suite_dirs` returns None
+    and the ownership test asserts on that - it does not fall back to the local
+    copy and call it agreement."""
+    stand_in = tmp_path / "plugin.py"
+    stand_in.write_text("_SOMETHING_ELSE = {'smoke'}\n", encoding="utf-8")
+
+    assert _plugin_generic_suite_dirs(stand_in) is None
+
+
+def _subprocess(argv: list[str], cwd: Path, pythonpath: Path) -> subprocess.CompletedProcess:
+    """A child that inherits neither this run's project root nor its environment
+    selection, so what it resolves is decided by `pythonpath` and `cwd` alone."""
+    env = {k: v for k, v in os.environ.items() if k not in {"PWPF_ROOT", "ENVIRONMENT"}}
+    env["PYTHONPATH"] = str(pythonpath)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=300)
 
 
 # --------------------------------------------------------------------------- #
