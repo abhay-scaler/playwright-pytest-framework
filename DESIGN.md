@@ -175,9 +175,14 @@ A single test run goes through these stages:
    its application name, plus the run's `browser` (from `BROWSER_NAME`) and `environment` (from
    `ENVIRONMENT`), so a nightly cross-browser failure is identifiable from the Allure result
    itself rather than requiring someone to infer it from the CI job name. At the start of the
-   session, a `pytest_configure` hook clears `reports/allure-results/` of any results left over
+   session, a `pytest_configure` hook clears the Allure results directory of anything left over
    from a previous run — allure-pytest never does this itself, so without it every run's results
-   would accumulate in that directory forever. At the end of the session, `pytest_terminal_summary`
+   would accumulate in that directory forever. *Which* directory is read off the config, the same
+   way the report path below is: allure-pytest resolves `--alluredir` against the directory pytest
+   was invoked from (`os.path.abspath`), so cleaning `allure_results_dir()` under the project root
+   emptied the wrong folder whenever the two differed. With no `--alluredir` nothing is written and
+   nothing is cleaned — a guessed directory would delete a previous run's results that this run is
+   not going to replace. At the end of the session, `pytest_terminal_summary`
    post-processes the pytest-html report, embedding any failure screenshots from *this* run
    directly into the file — recursively, so per-app subdirectories are found, and namespaced
    (`<app>__<test>.png`) so two apps' identically-named screenshots never collide. *Which* file
@@ -695,7 +700,10 @@ running under real `pytest -n auto` load:
 - **`reports/allure-results/` accumulated forever** — allure-pytest never clears its own output
   directory, so every run added another UUID-named result per test with nothing ever removing old
   ones. Fixed with a `pytest_configure` hook (`pwpf/utils/allure_cleanup.py`, same xdist-master guard as
-  above) that clears the directory once at the start of each run.
+  above) that clears the directory once at the start of each run — the directory the run is
+  actually writing to, taken from `--alluredir`, since the first version of this cleanup resolved
+  it from the project root and so cleared nothing of the sort for a run started from a
+  subdirectory (`tests/test_allure_cleanup.py`).
 
 ---
 

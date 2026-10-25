@@ -68,6 +68,35 @@ MARKERS = (
 )
 
 
+def _configured_path(config: pytest.Config, option: str) -> Path | None:
+    """A path pytest was configured with, resolved as pytest's own plugins do.
+
+    pytest-html and allure-pytest both turn a relative value into an absolute
+    one against the directory pytest was invoked from - `os.path.abspath`, in
+    `allure_pytest/plugin.py` and in pytest-html's report path - and *not*
+    against rootdir. So that, not the project root, is where the files of a run
+    started from a subdirectory land. Returns None when the option was not
+    given, or when the plugin that defines it is not installed.
+    """
+    value = config.getoption(option, default=None)
+    if not value:
+        return None
+    path = Path(str(value)).expanduser()
+    return path if path.is_absolute() else Path(config.invocation_params.dir) / path
+
+
+def _allure_results_dir(config: pytest.Config) -> Path | None:
+    """The directory allure-pytest will write this run's results to, or None.
+
+    There is deliberately no fallback to the framework's own
+    `allure_results_dir()`, unlike the report path below: this directory gets
+    emptied, and with no `--alluredir` nothing is written this run, so a guessed
+    directory would delete a previous run's results that nothing is going to
+    replace. Reading tolerates a guess; deleting does not.
+    """
+    return _configured_path(config, "allure_report_dir")
+
+
 def pytest_configure(config: pytest.Config) -> None:
     for marker in MARKERS:
         config.addinivalue_line("markers", marker)
@@ -83,7 +112,9 @@ def pytest_configure(config: pytest.Config) -> None:
     # here can never race with a worker that has already started writing.
     if getattr(config, "workerinput", None) is not None:
         return
-    clean_allure_results()
+    allure_dir = _allure_results_dir(config)
+    if allure_dir is not None:
+        clean_allure_results(allure_dir)
 
 
 def _app_name_for_path(path: Path) -> str:
@@ -295,25 +326,19 @@ def pytest_runtest_makereport(item, call):
 def _html_report_path(config: pytest.Config) -> Path:
     """Where this run's pytest-html report actually is, as an absolute path.
 
-    pytest-html owns `--html` and resolves a relative value against the
-    directory pytest was invoked from, not against rootdir. Reading the option
-    back from the config is what keeps this in step with wherever the report
-    was actually written; the hardcoded `"reports/pytest_report.html"` this
-    replaces was right for one `--html` value and silently embedded nothing for
-    any other. Both halves are pinned by tests/test_report_path.py.
+    pytest-html owns `--html`. Reading the option back from the config is what
+    keeps this in step with wherever the report was actually written; the
+    hardcoded `"reports/pytest_report.html"` this replaces was right for one
+    `--html` value and silently embedded nothing for any other.
 
     With no `--html` (pytest-html absent, or no report asked for) the
     framework's own convention stands in: `report_dir()`, which is anchored to
     the consumer project's root like every other artifact directory and never
-    to wherever the framework itself is installed.
+    to wherever the framework itself is installed. Embedding only ever reads,
+    so a fallback here costs nothing worse than "report not found". Both halves
+    are pinned by tests/test_report_path.py.
     """
-    html_path = config.getoption("htmlpath", default=None)
-    if not html_path:
-        return report_dir() / "pytest_report.html"
-    path = Path(str(html_path)).expanduser()
-    if path.is_absolute():
-        return path
-    return Path(config.invocation_params.dir) / path
+    return _configured_path(config, "htmlpath") or report_dir() / "pytest_report.html"
 
 
 @pytest.hookimpl(trylast=True)
