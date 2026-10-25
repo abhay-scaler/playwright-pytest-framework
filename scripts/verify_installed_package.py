@@ -231,15 +231,22 @@ def declared_project_metadata() -> dict[str, str]:
 
 def source_package_members() -> set[str]:
     """Every module and data file the wheel is expected to carry, taken from the
-    source tree rather than from a list that would go stale when a module is
-    added."""
-    members = {
+    source tree rather than from a list that would go stale when a file is added.
+
+    Data files count, not only modules: a new `.json` under `pwpf/` that nobody
+    adds to `[tool.setuptools.package-data]` is silently absent from the wheel,
+    and a check that only looked for `*.py` plus one known schema would still
+    pass. Build output and editor droppings are not source, so bytecode,
+    `__pycache__` and dotfiles are excluded.
+    """
+    return {
         path.relative_to(REPO_ROOT).as_posix()
-        for path in (REPO_ROOT / "pwpf").rglob("*.py")
-        if "__pycache__" not in path.parts
+        for path in (REPO_ROOT / "pwpf").rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and path.suffix != ".pyc"
+        and not path.name.startswith(".")
     }
-    members.add("pwpf/ai_testing/schemas/scenario.schema.json")
-    return members
 
 
 def check_wheel_contents(wheel: Path) -> None:

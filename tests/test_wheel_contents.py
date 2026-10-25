@@ -255,6 +255,32 @@ def test_the_scripts_own_source_tree_expectations_are_not_empty():
     assert "pwpf/ai_testing/schemas/scenario.schema.json" in members
     assert len(members) > 10
     assert not [m for m in members if "__pycache__" in m]
+    assert [
+        m for m in members if not m.endswith(".py")
+    ], "data files must be expected in the wheel too, not only modules"
+
+
+def test_every_data_file_under_the_package_is_expected_in_the_wheel(tmp_path, monkeypatch):
+    """A new data file must be required without editing this script - that is
+    the gap a `*.py`-only glob left. Build output and dotfiles are not source."""
+    package = tmp_path / "pwpf" / "ai_testing" / "schemas"
+    package.mkdir(parents=True)
+    (tmp_path / "pwpf" / "plugin.py").write_text("", encoding="utf-8")
+    (package / "scenario.schema.json").write_text("{}", encoding="utf-8")
+    (package / "failure_report.schema.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "pwpf" / ".DS_Store").write_text("", encoding="utf-8")
+    cache = tmp_path / "pwpf" / "__pycache__"
+    cache.mkdir()
+    (cache / "plugin.cpython-312.pyc").write_text("", encoding="utf-8")
+    monkeypatch.setattr(verify, "REPO_ROOT", tmp_path)
+
+    members = verify.source_package_members()
+
+    assert members == {
+        "pwpf/plugin.py",
+        "pwpf/ai_testing/schemas/scenario.schema.json",
+        "pwpf/ai_testing/schemas/failure_report.schema.json",
+    }
 
 
 def test_the_forbidden_paths_do_not_exclude_the_frameworks_own_ai_testing_package():

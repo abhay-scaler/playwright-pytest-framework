@@ -13,8 +13,10 @@ running from a subdirectory alone did not expose it - measured, not assumed.)
 
 Reading the option back from the config fixes that for any path a consumer
 passes, and when there is no option the framework's own project-root
-convention stands in. These tests pin both halves, and that neither can land
-inside the installed framework. Deterministic throughout - temporary
+convention stands in. These tests pin both halves, that the `$VAR` and `~`
+expansion pytest-html performs is matched here (and nowhere near the Allure
+path, which allure-pytest does not expand and which is deleted from), and that
+neither branch can land inside the installed framework. Deterministic throughout - temporary
 directories and one subprocess, no network and no browser.
 """
 
@@ -78,6 +80,29 @@ def test_an_absolute_html_option_is_taken_as_given(tmp_path):
     report = tmp_path / "elsewhere" / "report.html"
 
     assert _html_report_path(_config(str(report), tmp_path)) == report
+
+
+def test_an_environment_variable_in_the_html_path_is_expanded(tmp_path, monkeypatch):
+    """pytest-html runs the value through `os.path.expandvars`
+    (`pytest_html/basereport.py`), so `--html=$OUT/report.html` has to be read
+    the same way here or the embed step looks for a literal `$OUT` directory.
+    The Allure path deliberately does *not* do this - allure-pytest does not
+    either, and that path is the one that gets deleted from."""
+    monkeypatch.setenv("PWPF_TEST_OUT", str(tmp_path / "out"))
+
+    resolved = _html_report_path(_config("$PWPF_TEST_OUT/report.html", tmp_path))
+
+    assert resolved == tmp_path / "out" / "report.html"
+
+
+def test_a_tilde_in_the_html_path_is_expanded(tmp_path, monkeypatch):
+    """Also pytest-html's behaviour (`expanduser`). Harmless here because
+    embedding only reads - and the opposite of what the Allure path must do."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    resolved = _html_report_path(_config("~/report.html", tmp_path))
+
+    assert resolved == tmp_path / "home" / "report.html"
 
 
 def test_without_the_html_option_the_report_falls_under_the_project_root(tmp_path):

@@ -1,25 +1,37 @@
-"""Clearing stale Allure results, and choosing which directory to clear.
+"""Clearing stale Allure results: which directory, and what inside it.
 
-Two layers, tested separately. `clean_allure_results()` empties the directory it
-is handed - allure-pytest never clears its own output, so without this every run
-adds another UUID-named result to the same folder forever. The plugin decides
-*which* directory that is, and that decision is the part that was wrong:
-allure-pytest resolves `--alluredir` with `os.path.abspath`
-(`allure_pytest/plugin.py`), i.e. against the directory pytest was invoked from,
-while the plugin cleaned `allure_results_dir()` under the project root. Run from
-a subdirectory, the two were different folders: the results that were written
-accumulated, and a previous run's results elsewhere were deleted instead.
+Three layers, tested separately.
 
-The subprocess tests here are the reproduction, made permanent. They establish
-real pytest and allure-pytest behaviour rather than asserting against a mock of
-it, in temporary projects, with no network and no browser.
+`clean_allure_results()` removes Allure's own artefacts from the directory it is
+handed - allure-pytest never clears its own output, so without this every run
+adds another UUID-named result to the same folder forever. It removes *only*
+those artefacts: a consumer may point `--alluredir` at a directory it shares
+with other files, and `environment.properties`, `executor.json`,
+`categories.json` and `history/` are inputs to `allure generate` that a project
+places deliberately.
+
+The plugin decides *which* directory. allure-pytest resolves `--alluredir` with
+`os.path.abspath` (`allure_pytest/plugin.py`) - against the working directory,
+with no `~` and no `$VAR` expansion - so that is how it is resolved here.
+Expanding `~` instead pointed the cleanup at `$HOME/<dir>`, a real directory
+outside the project that Allure never writes to; the subprocess test below is
+that reproduction, with `HOME` redirected into a temporary directory.
+
+The plugin also refuses to clean a directory that is, or contains, the project
+root or the invocation directory, however the option was spelled.
+
+The subprocess tests establish real pytest and allure-pytest behaviour rather
+than asserting against a mock of it, in temporary projects with a temporary
+HOME, no network and no browser.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -29,30 +41,92 @@ import pytest
 from pwpf.config import paths
 from pwpf.config.paths import PROJECT_MARKER, ROOT_ENV_VAR, project_root, set_project_root
 from pwpf.config.settings import allure_results_dir
-from pwpf.plugin import _allure_results_dir
+from pwpf.plugin import _allure_results_dir, _unsafe_to_clean
 from pwpf.utils.allure_cleanup import clean_allure_results
 
 FRAMEWORK_ROOT = project_root()
 FRAMEWORK_PACKAGE = FRAMEWORK_ROOT / "pwpf"
 
 
+@pytest.fixture(autouse=True)
+def _restore_pinned_roots():
+    """Root pinning is process-global; put it back so one test cannot relocate
+    every later one."""
+    caller, session = paths._caller_root, paths._pytest_root
+    yield
+    paths._caller_root, paths._pytest_root = caller, session
+
+
+def _artifact(directory: Path, kind: str = "result.json") -> Path:
+    """A file named the way allure-pytest names its own output."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{uuid.uuid4()}-{kind}"
+    path.write_text('{"stale": true}', encoding="utf-8")
+    return path
+
+
 # --------------------------------------------------------------------------- #
-# The cleanup itself
+# What the cleanup removes, and what it must not
 # --------------------------------------------------------------------------- #
 
 
-def test_clean_allure_results_removes_stale_files(tmp_path):
+def test_allures_own_artifacts_are_removed(tmp_path):
     results_dir = tmp_path / "allure-results"
-    results_dir.mkdir()
-    (results_dir / "stale-result.json").write_text("{}", encoding="utf-8")
-    stale_attachment_dir = results_dir / "stale-attachment-dir"
-    stale_attachment_dir.mkdir()
-    (stale_attachment_dir / "stale.txt").write_text("stale", encoding="utf-8")
+    artifacts = [
+        _artifact(results_dir, kind)
+        for kind in ("result.json", "container.json", "globals.json", "attachment.png")
+    ]
 
     removed = clean_allure_results(results_dir)
 
-    assert removed == 2
+    assert removed == 4
+    assert not [a for a in artifacts if a.exists()]
     assert list(results_dir.iterdir()) == []
+
+
+def test_report_inputs_and_unrelated_files_survive(tmp_path):
+    """The reason the cleanup is pattern-based: these belong to the project, not
+    to allure-pytest, and three of them are inputs `allure generate` reads."""
+    results_dir = tmp_path / "allure-results"
+    results_dir.mkdir()
+    keepers = []
+    for name in (
+        "environment.properties",
+        "executor.json",
+        "categories.json",
+        "notes.txt",
+        "my-result.json",
+    ):
+        keeper = results_dir / name
+        keeper.write_text("keep", encoding="utf-8")
+        keepers.append(keeper)
+    stale = _artifact(results_dir)
+
+    removed = clean_allure_results(results_dir)
+
+    assert removed == 1
+    assert not stale.exists()
+    assert [k for k in keepers if k.is_file()] == keepers
+
+
+def test_no_directory_is_ever_removed(tmp_path):
+    """allure-pytest writes no subdirectories, so the cleanup has no business
+    deleting one - `history/` in particular is how trend data survives."""
+    results_dir = tmp_path / "allure-results"
+    history = results_dir / "history"
+    history.mkdir(parents=True)
+    (history / "history.json").write_text("[]", encoding="utf-8")
+    nested = results_dir / "someones-data" / "deeper"
+    nested.mkdir(parents=True)
+    (nested / "keep.txt").write_text("keep", encoding="utf-8")
+    stale = _artifact(results_dir)
+
+    removed = clean_allure_results(results_dir)
+
+    assert removed == 1
+    assert not stale.exists()
+    assert (history / "history.json").is_file()
+    assert (nested / "keep.txt").is_file()
 
 
 def test_clean_allure_results_is_a_noop_when_directory_is_absent(tmp_path):
@@ -66,20 +140,33 @@ def test_clean_allure_results_is_a_noop_when_directory_is_absent(tmp_path):
 
 def test_clean_allure_results_touches_nothing_outside_the_directory_it_is_given(tmp_path):
     results_dir = tmp_path / "allure-results"
-    results_dir.mkdir()
-    (results_dir / "stale-result.json").write_text("{}", encoding="utf-8")
+    stale = _artifact(results_dir)
     sibling = tmp_path / "allure-results-from-another-run"
-    sibling.mkdir()
-    (sibling / "keep-result.json").write_text("{}", encoding="utf-8")
+    kept_sibling = _artifact(sibling)
     loose_file = tmp_path / "keep.txt"
     loose_file.write_text("keep", encoding="utf-8")
 
     removed = clean_allure_results(results_dir)
 
     assert removed == 1
-    assert list(results_dir.iterdir()) == []
-    assert (sibling / "keep-result.json").is_file()
+    assert not stale.exists()
+    assert kept_sibling.is_file()
     assert loose_file.is_file()
+
+
+def test_called_without_a_directory_it_uses_the_project_root_convention(tmp_path):
+    """The documented default for a deliberate call. The plugin does not rely on
+    it - it passes the directory the run is configured to write to."""
+    root = tmp_path / "consumer"
+    root.mkdir()
+    set_project_root(root, source="caller")
+    stale = _artifact(allure_results_dir())
+
+    removed = clean_allure_results()
+
+    assert removed == 1
+    assert not stale.exists()
+    assert allure_results_dir() == root.resolve() / "reports" / "allure-results"
 
 
 # --------------------------------------------------------------------------- #
@@ -87,18 +174,9 @@ def test_clean_allure_results_touches_nothing_outside_the_directory_it_is_given(
 # --------------------------------------------------------------------------- #
 
 
-@pytest.fixture(autouse=True)
-def _restore_pinned_roots():
-    """Root pinning is process-global; put it back so one test cannot relocate
-    every later one."""
-    caller, session = paths._caller_root, paths._pytest_root
-    yield
-    paths._caller_root, paths._pytest_root = caller, session
-
-
-def _config(alluredir: str | None, invocation_dir: Path) -> pytest.Config:
-    """The two things the resolution reads off a real pytest Config. The option's
-    dest is allure-pytest's own: `--alluredir` stores to `allure_report_dir`."""
+def _config(alluredir: str | None, invocation_dir: Path, rootpath: Path | None = None):
+    """The three things the resolution and the guard read off a real pytest
+    Config. `--alluredir` stores to allure-pytest's own dest, `allure_report_dir`."""
     return cast(
         pytest.Config,
         SimpleNamespace(
@@ -106,6 +184,7 @@ def _config(alluredir: str | None, invocation_dir: Path) -> pytest.Config:
                 alluredir if name == "allure_report_dir" else default
             ),
             invocation_params=SimpleNamespace(dir=invocation_dir),
+            rootpath=rootpath if rootpath is not None else invocation_dir,
         ),
     )
 
@@ -125,8 +204,8 @@ def test_the_configured_relative_default_resolves_under_the_project_root(tmp_pat
 
 
 def test_a_relative_alluredir_from_a_subdirectory_resolves_under_that_subdirectory(tmp_path):
-    """The regression: allure-pytest writes beside the invocation directory, so
-    that is the directory to clear - not the project root's."""
+    """allure-pytest writes beside the invocation directory, so that is the
+    directory to clear - not the project root's."""
     root = tmp_path / "consumer"
     subdirectory = root / "tests"
     subdirectory.mkdir(parents=True)
@@ -156,6 +235,30 @@ def test_an_alternative_relative_alluredir_is_honoured(tmp_path):
     assert resolved == root / "build" / "allure"
 
 
+def test_a_tilde_is_not_expanded_because_allure_does_not_expand_it(tmp_path):
+    """The destructive bug, at unit level: allure-pytest's `os.path.abspath`
+    leaves `~` alone, making it a literal directory name under the invocation
+    directory. Expanding it here pointed the cleanup at the real home."""
+    invocation = tmp_path / "consumer"
+    invocation.mkdir()
+
+    resolved = _allure_results_dir(_config("~/allure-out", invocation))
+
+    assert resolved == invocation / "~" / "allure-out"
+    assert resolved != Path.home() / "allure-out"
+    assert str(Path.home()) not in str(resolved)
+
+
+def test_parent_segments_are_normalised_the_way_allure_normalises_them(tmp_path):
+    invocation = tmp_path / "consumer" / "tests"
+    invocation.mkdir(parents=True)
+
+    resolved = _allure_results_dir(_config("../out", invocation))
+
+    assert resolved == tmp_path / "consumer" / "out"
+    assert ".." not in str(resolved)
+
+
 def test_without_the_option_there_is_no_cleanup_target(tmp_path):
     """No `--alluredir` (or no allure-pytest): nothing is written this run, so
     there is nothing to clear. Deliberately *not* falling back to
@@ -170,7 +273,53 @@ def test_without_the_option_there_is_no_cleanup_target(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# End to end: real pytest, real allure-pytest
+# The directories the plugin refuses to clean
+# --------------------------------------------------------------------------- #
+
+
+def test_a_dedicated_results_directory_is_safe_to_clean(tmp_path):
+    root = tmp_path / "consumer"
+    results = root / "reports" / "allure-results"
+    results.mkdir(parents=True)
+
+    assert _unsafe_to_clean(results, _config(None, root, rootpath=root)) is None
+
+
+def test_the_invocation_directory_is_refused(tmp_path):
+    """`--alluredir=.` - the cleanup would be operating in the middle of the
+    project's own files."""
+    root = tmp_path / "consumer"
+    root.mkdir()
+
+    reason = _unsafe_to_clean(root, _config(".", root, rootpath=root))
+
+    assert reason is not None
+    assert "invoked from" in reason or "project root" in reason
+
+
+def test_a_directory_above_the_project_is_refused(tmp_path):
+    """`--alluredir=..` and anything else that would reach over the project."""
+    root = tmp_path / "consumer"
+    (root / "tests").mkdir(parents=True)
+
+    reason = _unsafe_to_clean(tmp_path, _config("..", root / "tests", rootpath=root))
+
+    assert reason is not None
+    assert "contains" in reason
+
+
+def test_the_project_root_is_refused_even_from_a_subdirectory(tmp_path):
+    root = tmp_path / "consumer"
+    subdirectory = root / "tests"
+    subdirectory.mkdir(parents=True)
+
+    reason = _unsafe_to_clean(root, _config("..", subdirectory, rootpath=root))
+
+    assert reason is not None
+
+
+# --------------------------------------------------------------------------- #
+# End to end: real pytest, real allure-pytest, temporary HOME
 # --------------------------------------------------------------------------- #
 
 
@@ -189,17 +338,21 @@ def _consumer(tmp_path: Path, addopts: str) -> Path:
     return root
 
 
-def _stale(directory: Path, name: str) -> Path:
-    directory.mkdir(parents=True, exist_ok=True)
-    stale = directory / name
-    stale.write_text('{"stale": true}', encoding="utf-8")
-    return stale
-
-
-def _run_from(directory: Path, *, decoy_root: Path | None = None) -> subprocess.CompletedProcess:
-    env = {k: v for k, v in os.environ.items() if k not in {ROOT_ENV_VAR, "ENVIRONMENT"}}
-    env["PYTHONPATH"] = str(FRAMEWORK_ROOT)
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
+def _run_from(
+    directory: Path,
+    *,
+    home: Path,
+    decoy_root: Path | None = None,
+) -> subprocess.CompletedProcess:
+    """Real pytest in a subprocess, with HOME redirected into the test's own
+    temporary directory so nothing here can reach a real home directory."""
+    home.mkdir(parents=True, exist_ok=True)
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(home),
+        "PYTHONPATH": str(FRAMEWORK_ROOT),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
     if decoy_root is not None:
         # A root that disagrees with pytest's: pytest's rootdir must win, and
         # nothing here may be cleaned on its account.
@@ -215,19 +368,17 @@ def _run_from(directory: Path, *, decoy_root: Path | None = None) -> subprocess.
 
 
 def test_a_run_from_a_subdirectory_clears_the_results_it_actually_writes(tmp_path):
-    """The reproduction, made permanent. Fails against the old implementation,
-    which cleared the project root's directory while allure-pytest wrote to the
-    invocation directory's."""
+    """Fails against the implementation that cleaned the project root's
+    directory while allure-pytest wrote to the invocation directory's."""
     pytest.importorskip("allure_pytest", reason="allure-pytest is not installed")
     root = _consumer(tmp_path, "--alluredir=reports/allure-results")
     written_dir = root / "tests" / "reports" / "allure-results"
-    project_root_dir = root / "reports" / "allure-results"
-    stale_in_written = _stale(written_dir, "stale-subdir-result.json")
-    stale_at_root = _stale(project_root_dir, "stale-root-result.json")
+    stale_in_written = _artifact(written_dir)
+    stale_at_root = _artifact(root / "reports" / "allure-results")
     decoy_root = tmp_path / "decoy"
-    stale_in_decoy = _stale(decoy_root / "reports" / "allure-results", "decoy-result.json")
+    stale_in_decoy = _artifact(decoy_root / "reports" / "allure-results")
 
-    result = _run_from(root / "tests", decoy_root=decoy_root)
+    result = _run_from(root / "tests", home=tmp_path / "home", decoy_root=decoy_root)
 
     assert result.returncode == 0, result.stdout + result.stderr
     # This run's results are there, and the previous run's are gone - which is
@@ -246,14 +397,62 @@ def test_a_run_from_a_subdirectory_clears_the_results_it_actually_writes(tmp_pat
     assert not list(FRAMEWORK_PACKAGE.rglob("allure-results"))
 
 
-def test_a_run_without_alluredir_clears_nothing(tmp_path):
-    """The one behaviour this fix changes: with no `--alluredir`, allure-pytest
-    writes nothing, so a previous run's results are left where they are instead
-    of being deleted by a cleanup that has no output directory to clean."""
-    root = _consumer(tmp_path, "-ra")
-    stale = _stale(root / "reports" / "allure-results", "previous-run-result.json")
+def test_a_tilde_alluredir_leaves_the_home_directory_alone(tmp_path):
+    """The reproduction of the destructive defect, made permanent. Against the
+    expanding implementation this fails: `$HOME/allure-out` is emptied while
+    allure-pytest writes into a literal `~` directory under the project."""
+    pytest.importorskip("allure_pytest", reason="allure-pytest is not installed")
+    root = _consumer(tmp_path, "--alluredir=~/allure-out")
+    home = tmp_path / "home"
+    in_home = _artifact(home / "allure-out")
 
-    result = _run_from(root / "tests")
+    result = _run_from(root, home=home)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert in_home.is_file(), (
+        "a file in $HOME was deleted: the configured ~ was expanded, but allure-pytest "
+        "treats it as a literal directory name"
+    )
+    literal = root / "~" / "allure-out"
+    written = sorted(literal.glob("*-result.json"))
+    assert written, f"allure-pytest wrote no result into {literal}\n{result.stdout}"
+
+
+def test_an_alluredir_of_the_invocation_directory_is_refused_with_a_diagnostic(tmp_path):
+    """`--alluredir=.`: nothing is deleted, and the run says why rather than
+    silently doing nothing."""
+    pytest.importorskip("allure_pytest", reason="allure-pytest is not installed")
+    root = _consumer(tmp_path, "--alluredir=.")
+    stale_shaped_like_allure = _artifact(root)
+    unrelated = root / "keep.txt"
+    unrelated.write_text("keep", encoding="utf-8")
+
+    result = _run_from(root, home=tmp_path / "home")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert stale_shaped_like_allure.is_file(), "the invocation directory was cleaned anyway"
+    assert unrelated.is_file()
+    assert (root / PROJECT_MARKER).is_file()
+    # The diagnostic is looked for in the framework's own log rather than the
+    # terminal: this runs in `pytest_configure`, while pytest's output capture
+    # is in place, so the log file is where it reliably lands.
+    logs = "".join(
+        log.read_text(encoding="utf-8") for log in (root / "logs").rglob("framework.log")
+    )
+    diagnostics = logs + result.stdout + result.stderr
+    refusal = re.search(r"Not clearing stale Allure results", diagnostics)
+    assert refusal, f"no diagnostic explaining the refusal\n{diagnostics}"
+    assert "it is the project root" in logs or "invoked from" in logs, logs
+
+
+def test_a_run_without_alluredir_clears_nothing(tmp_path):
+    """With no `--alluredir`, allure-pytest writes nothing, so a previous run's
+    results are left where they are instead of being deleted by a cleanup that
+    has no output directory to clean."""
+    root = _consumer(tmp_path, "-ra")
+    stale = _artifact(root / "reports" / "allure-results")
+
+    result = _run_from(root, home=tmp_path / "home")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert stale.is_file(), "results were deleted for a run that writes none"

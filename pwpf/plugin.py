@@ -15,6 +15,7 @@ already registered and skips the second import. Registering one module under
 two names is an error, which is why the two names must stay in step.
 """
 
+import os
 import time
 from pathlib import Path
 
@@ -68,33 +69,73 @@ MARKERS = (
 )
 
 
-def _configured_path(config: pytest.Config, option: str) -> Path | None:
-    """A path pytest was configured with, resolved as pytest's own plugins do.
+def _configured_path(config: pytest.Config, option: str, *, expand: bool = False) -> Path | None:
+    """A path pytest was configured with, resolved as its owning plugin resolves it.
 
-    pytest-html and allure-pytest both turn a relative value into an absolute
-    one against the directory pytest was invoked from - `os.path.abspath`, in
-    `allure_pytest/plugin.py` and in pytest-html's report path - and *not*
-    against rootdir. So that, not the project root, is where the files of a run
-    started from a subdirectory land. Returns None when the option was not
-    given, or when the plugin that defines it is not installed.
+    Both plugins turn a relative value into an absolute one against the
+    directory pytest was invoked from - `os.path.abspath(report_dir)` in
+    `allure_pytest/plugin.py`, `Path.cwd() / ...` in
+    `pytest_html/basereport.py` - and *not* against rootdir. So that, not the
+    project root, is where the files of a run started from a subdirectory land.
+
+    `expand` is where they differ, and it is not cosmetic. pytest-html applies
+    `os.path.expandvars` and `expanduser`; allure-pytest applies neither, so
+    `--alluredir=~/out` means a literal `./~/out` directory to it. Expanding it
+    anyway pointed this framework's cleanup at `$HOME/out` - a real directory,
+    outside the project, that Allure never writes to. Reading the wrong path
+    finds nothing; deleting from it loses someone's files, so the expansion
+    policy follows the plugin that owns the option, never the other one.
+
+    Returns None when the option was not given, or when the plugin that defines
+    it is not installed.
     """
     value = config.getoption(option, default=None)
     if not value:
         return None
-    path = Path(str(value)).expanduser()
-    return path if path.is_absolute() else Path(config.invocation_params.dir) / path
+    text = os.path.expandvars(str(value)) if expand else str(value)
+    path = Path(text).expanduser() if expand else Path(text)
+    if not path.is_absolute():
+        path = Path(config.invocation_params.dir) / path
+    # abspath, not resolve(): it normalises `..` the way both plugins do without
+    # following symlinks, so the comparisons in _unsafe_to_clean see the same
+    # directory the artefacts are written to.
+    return Path(os.path.abspath(path))
 
 
 def _allure_results_dir(config: pytest.Config) -> Path | None:
     """The directory allure-pytest will write this run's results to, or None.
 
-    There is deliberately no fallback to the framework's own
-    `allure_results_dir()`, unlike the report path below: this directory gets
-    emptied, and with no `--alluredir` nothing is written this run, so a guessed
-    directory would delete a previous run's results that nothing is going to
-    replace. Reading tolerates a guess; deleting does not.
+    No expansion (see above), and no fallback to the framework's own
+    `allure_results_dir()` either, unlike the report path below: this directory
+    is deleted from, and with no `--alluredir` nothing is written this run, so a
+    guessed directory would delete a previous run's results that nothing is
+    going to replace.
     """
     return _configured_path(config, "allure_report_dir")
+
+
+def _unsafe_to_clean(results_dir: Path, config: pytest.Config) -> str | None:
+    """Why this directory must not be cleaned automatically, or None if it may be.
+
+    `clean_allure_results` only ever removes Allure's own artefacts, so even
+    `--alluredir=.` cannot empty a working tree. These boundaries are the second
+    line: a results directory that *is* the project root or the invocation
+    directory, or that contains either, is being shared with the project's own
+    files, and no unattended cleanup belongs there.
+    """
+    boundaries = (
+        ("the project root", Path(os.path.abspath(config.rootpath))),
+        (
+            "the directory pytest was invoked from",
+            Path(os.path.abspath(config.invocation_params.dir)),
+        ),
+    )
+    for name, boundary in boundaries:
+        if results_dir == boundary:
+            return f"it is {name}"
+        if boundary.is_relative_to(results_dir):
+            return f"it contains {name}"
+    return None
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -113,8 +154,18 @@ def pytest_configure(config: pytest.Config) -> None:
     if getattr(config, "workerinput", None) is not None:
         return
     allure_dir = _allure_results_dir(config)
-    if allure_dir is not None:
-        clean_allure_results(allure_dir)
+    if allure_dir is None:
+        return
+    unsafe = _unsafe_to_clean(allure_dir, config)
+    if unsafe is not None:
+        LOGGER.warning(
+            "Not clearing stale Allure results in %s: %s. Point --alluredir at a "
+            "directory of its own, or clear it yourself.",
+            allure_dir,
+            unsafe,
+        )
+        return
+    clean_allure_results(allure_dir)
 
 
 def _app_name_for_path(path: Path) -> str:
@@ -331,6 +382,10 @@ def _html_report_path(config: pytest.Config) -> Path:
     hardcoded `"reports/pytest_report.html"` this replaces was right for one
     `--html` value and silently embedded nothing for any other.
 
+    `expand=True` matches pytest-html, which runs the value through
+    `os.path.expandvars` and `expanduser` (`pytest_html/basereport.py`), so a
+    `--html=$OUT/report.html` points both of us at the same file.
+
     With no `--html` (pytest-html absent, or no report asked for) the
     framework's own convention stands in: `report_dir()`, which is anchored to
     the consumer project's root like every other artifact directory and never
@@ -338,7 +393,7 @@ def _html_report_path(config: pytest.Config) -> Path:
     so a fallback here costs nothing worse than "report not found". Both halves
     are pinned by tests/test_report_path.py.
     """
-    return _configured_path(config, "htmlpath") or report_dir() / "pytest_report.html"
+    return _configured_path(config, "htmlpath", expand=True) or report_dir() / "pytest_report.html"
 
 
 @pytest.hookimpl(trylast=True)

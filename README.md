@@ -313,7 +313,7 @@ based on each test's file path.
 | Artifact | Location | When |
 |---|---|---|
 | HTML report | `reports/pytest_report.html` | every run; failure screenshots embedded automatically |
-| Allure results | `reports/allure-results/` | every run; `application`/`browser`/`environment` labels on every test; stale results from previous runs cleared automatically |
+| Allure results | `reports/allure-results/` | every run; `application`/`browser`/`environment` labels on every test; Allure's own stale results from previous runs cleared automatically, other files in that directory left alone |
 | Screenshot | `screenshots/<app_name>/<test_name>.png` | UI test failure only |
 | Trace | `traces/<app_name>/<test_name>.zip` | UI test failure only |
 | Video | `videos/<app_name>/<test_name>.webm` | UI test failure only |
