@@ -39,9 +39,46 @@ how many applications exist or what any of them are called.
 
 ## 2. Directory Structure
 
+Two trees, not one, because two things live here: the installable framework and the project that
+consumes it. The boundary is the one the extraction will cut along
+([docs/documentation-split-plan.md](docs/documentation-split-plan.md)), and labelling it now costs
+nothing and saves a reader from inferring it.
+
+**The framework** — `playwright-pytest-framework`, importable as `pwpf`. Application-neutral, and
+the half that moves to its own repository (§12).
+
+```
+pwpf/                          # the installable package; everything below ships in the wheel
+  plugin.py                    # the pytest plugin (pytest11 entry point): fixtures, markers, hooks
+  config/
+    paths.py                   # consumer-project root resolution (§6)
+    settings.py                # artifact locations and env-var settings (browser, headless, ...)
+  core/
+    base_page.py               # shared Playwright actions used by every page object
+    app_config.py              # loads apps/<app>/config/<environment>.json -> AppConfig
+    api_client.py              # thin APIRequestContext wrapper for API-level tests
+  utils/
+    logger.py                  # worker-aware file+console logger
+    helpers.py                 # small stateless helpers (e.g. screenshot naming)
+    report_embedder.py         # post-processes the HTML report to embed failure screenshots
+    allure_cleanup.py          # clears the run's own stale Allure results (§7)
+  ai_testing/
+    validate_catalog.py        # scenario-catalog validator (console script + python -m)
+    schemas/scenario.schema.json   #   its JSON Schema, shipped as package data
+
+pyproject.toml                 # distribution metadata and dependencies, plus Ruff/Black/mypy config
+LICENSE                        # MIT, shipped in the wheel
+scripts/verify_installed_package.py   # builds the wheel and proves it installs and works (§12)
+tests/test_*.py                # most of these test the framework itself - see the inventory in
+                               #   docs/framework-extraction-readiness.md §3.1 for which do not
+```
+
+**The consumer project** — this repository's own applications, tests and policy. Stays here when
+the framework leaves.
+
 ```
 apps/
-  sample_app/                 # a static local HTML app (demonstrates a file-based app)
+  sample_app/                  # a static local HTML app (demonstrates a file-based app)
     config/
       local.json
       ci.json
@@ -81,44 +118,30 @@ apps/
     scenarios/
       shopping_journey.yaml    #   scenario catalog, schema-validated in CI (§11)
 
-core/
-  base_page.py                 # shared Playwright actions used by every page object
-  app_config.py                # loads apps/<app>/config/<environment>.json -> AppConfig
-  api_client.py                 # thin APIRequestContext wrapper for API-level tests
-
-pwpf/                          # the installable framework package
-  plugin.py                    # the pytest plugin (pytest11 entry point): fixtures, markers, hooks
-  config/
-    paths.py                   # consumer-project root resolution (§6)
-    settings.py                # framework-wide env-var settings and artifact locations
-  core/, utils/                # as below, inside the package
-  ai_testing/                  # catalog validator + scenario schema (shipped as package data)
-
-config/
-  settings.py                  # framework-wide env-var settings (browser, headless, etc.)
-
-utils/
-  logger.py                    # worker-aware file+console logger
-  helpers.py                    # small stateless helpers (e.g. screenshot naming)
-  report_embedder.py            # post-processes the HTML report to embed failure screenshots
-
 tests/
   sample_app/, web_search/, uitesting_playground/
-    conftest.py                 # binds the generic app_config fixture to this app's name
+    conftest.py                # binds the generic app_config fixture to this app's name
     smoke/, ui/
-  api/, tmp/                    # framework-level tests not owned by one application
-  test_*.py                     # tests of the framework itself (config, logging, report embedding)
+  api/, tmp/                   # suites not owned by one application
+  test_ci_production_exclusion.py   # policy: this repository's CI never collects a live-site test
+  test_quarantine_policy.py    # policy: what is quarantined, and why, stays on the record
 
-conftest.py                    # one line: loads pwpf.plugin from this source tree
+conftest.py                    # one line: loads pwpf.plugin from this source tree (§12)
 pytest.ini                     # test discovery, markers, default CLI options
-pyproject.toml                 # Ruff/Black/mypy config
 requirements.in                # loose, human-maintained dependency source
 requirements.txt               # generated, fully-pinned lock file - install from this
 requirements-ai.in / .txt      # scenario-validator deps only, outside the test runtime (§11)
 .pre-commit-config.yaml        # ruff, black, mypy, detect-secrets
 .secrets.baseline              # detect-secrets baseline (known-safe matches, e.g. docs examples)
-.github/workflows/ci.yml       # CI pipeline: lint/type-check, PR smoke, regression, cross-browser
+.github/workflows/ci.yml       # the seven CI jobs, with their owners, in §8
+docs/                          # this repository's documentation, including the AI-testing workflow
+ai_testing/                    # the prompt library and templates (no code, no dependencies)
+scripts/extraction_dry_run.py  # proves this project runs against the installed framework
+scripts/check_doc_links.py     # the documentation link and fragment gate (§8)
 ```
+
+Generated at runtime and git-ignored, under the **consumer's** project root rather than the
+framework's own directory (§6): `reports/`, `screenshots/`, `traces/`, `videos/`, `logs/`.
 
 ## 3. Execution Flow
 
@@ -421,16 +444,21 @@ tell which worker produced which line.
 ## 8. CI/CD Flow
 
 GitHub Actions (`.github/workflows/ci.yml`) runs as seven jobs rather than one, so a PR gets fast
-feedback without giving up full-suite and cross-browser coverage:
+feedback without giving up full-suite and cross-browser coverage. Each job is tagged with the half
+of the repository it serves - **framework**, **consumer**, or both - which is a note for the reader
+and for the extraction (§2, [docs/documentation-split-plan.md](docs/documentation-split-plan.md));
+it changes no job, no trigger and no command:
 
-1. **Lint & Type Check** — `ruff check .`, `black --check .`, `mypy .`. Runs on every trigger
-   (push, PR, schedule, manual dispatch), before any job installs a browser, so a lint/type error
-   fails in seconds rather than after a multi-minute Playwright install.
-2. **Scenario Catalog** — `python -m pwpf.ai_testing.validate_catalog`, installing only
+1. **Lint & Type Check** — *both* — `ruff check .`, `black --check .`, `mypy .`, and
+   `python scripts/check_doc_links.py`. Runs on every trigger (push, PR, schedule, manual
+   dispatch), before any job installs a browser, so a lint/type error fails in seconds rather
+   than after a multi-minute Playwright install. Both repositories will want the first three on
+   their own code; the documentation gate is this repository's.
+2. **Scenario Catalog** — *consumer* — `python -m pwpf.ai_testing.validate_catalog`, installing only
    `requirements-ai.txt` (PyYAML + jsonschema). Every trigger. No pytest, no browser, no
    network, so it needs no Playwright install and finishes in seconds; it is also the only job
    that installs anything outside the test-runtime lock (§11).
-3. **Installed Package** — `python scripts/verify_installed_package.py`. Every trigger. Builds a
+3. **Installed Package** — *framework* — `python scripts/verify_installed_package.py`. Every trigger. Builds a
    real wheel, reads its archive manifest, installs it with its declared dependencies into a
    clean `python -m venv`, generates a separate consumer project and runs everything from there
    with this source tree nowhere on the path (§12). It installs nothing beforehand - the script
@@ -438,15 +466,15 @@ feedback without giving up full-suite and cross-browser coverage:
    consumes no other job's output, so it runs alone in a fresh environment. Without it the
    packaging checks existed but nothing ran them: a `pyproject.toml` edit could break the
    distribution while every other job stayed green.
-4. **PR Smoke** (`pull_request` only) — the framework's own tests (`tests/test_*.py`, fast, no
+4. **PR Smoke** (`pull_request` only) — *consumer* — the framework's own tests (`tests/test_*.py`, fast, no
    browser) plus `-m "smoke and not production"`, Chromium only. Deliberately narrow: full
    regression coverage belongs to the jobs below, not to every PR.
-5. **Regression** (push to `main`/`dev`, nightly, manual dispatch) — the full suite, Chromium,
+5. **Regression** (push to `main`/`dev`, nightly, manual dispatch) — *consumer* — the full suite, Chromium,
    `pytest -m "not production" -n auto`.
-6. **Cross-Browser** (nightly, or manual dispatch with the `cross_browser` input) — the full suite
+6. **Cross-Browser** (nightly, or manual dispatch with the `cross_browser` input) — *consumer* — the full suite
    against Firefox and WebKit, as a matrix. Not run on every PR — it roughly triples runtime for
    coverage most changes don't need.
-7. **Quarantined (non-blocking)** — `pytest -m "quarantined and not production"`, with
+7. **Quarantined (non-blocking)** — *consumer* — `pytest -m "quarantined and not production"`, with
    `continue-on-error: true`, so known-unstable tests still run and still report without
    gating anything. See "Quarantined tests" below.
 

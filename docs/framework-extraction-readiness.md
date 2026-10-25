@@ -212,7 +212,7 @@ Exercised in both contexts rather than one: the module this session imported, an
 subprocess — a real `pwpf` package tree outside a generated consumer project that has no `pwpf/`
 of its own [V]. That second test fails against the path-based version [V].
 
-**5.5 Documentation is the most entangled asset.** **83** relative links and **31** heading
+**5.5 Documentation is the most entangled asset.** **86** relative links and **31** heading
 fragments resolve today — run `python scripts/check_doc_links.py` for the current figures, now
 machine-checked rather than hand-counted. This paragraph said 79 until Stage 0 of the split plan
 added that checker; the plan's own inventory was taken at 81, before the plan and this sentence
