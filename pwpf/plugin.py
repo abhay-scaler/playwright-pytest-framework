@@ -29,6 +29,7 @@ from pwpf.config.settings import (
     ENVIRONMENT,
     HEADLESS,
     ensure_dir,
+    report_dir,
     screenshot_dir,
     trace_dir,
     video_dir,
@@ -291,12 +292,36 @@ def pytest_runtest_makereport(item, call):
     return rep
 
 
+def _html_report_path(config: pytest.Config) -> Path:
+    """Where this run's pytest-html report actually is, as an absolute path.
+
+    pytest-html owns `--html` and resolves a relative value against the
+    directory pytest was invoked from, not against rootdir. Reading the option
+    back from the config is what keeps this in step with wherever the report
+    was actually written; the hardcoded `"reports/pytest_report.html"` this
+    replaces was right for one `--html` value and silently embedded nothing for
+    any other. Both halves are pinned by tests/test_report_path.py.
+
+    With no `--html` (pytest-html absent, or no report asked for) the
+    framework's own convention stands in: `report_dir()`, which is anchored to
+    the consumer project's root like every other artifact directory and never
+    to wherever the framework itself is installed.
+    """
+    html_path = config.getoption("htmlpath", default=None)
+    if not html_path:
+        return report_dir() / "pytest_report.html"
+    path = Path(str(html_path)).expanduser()
+    if path.is_absolute():
+        return path
+    return Path(config.invocation_params.dir) / path
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     # Under pytest-xdist, this hook fires in every worker process as well as
     # the master - `workerinput` is only set on a worker's `config`. Without
     # this guard, N workers + the master each redundantly re-scan and
-    # rewrite the same reports/pytest_report.html.
+    # rewrite the same report.
     if getattr(config, "workerinput", None) is not None:
         return
-    embed_failure_screenshots("reports/pytest_report.html", since=_SESSION_START)
+    embed_failure_screenshots(_html_report_path(config), since=_SESSION_START)

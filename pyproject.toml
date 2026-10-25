@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
+# >=77 for PEP 639: `license` as an SPDX string and `license-files`.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,14 +8,16 @@ name = "playwright-pytest-framework"
 version = "0.1.0"
 description = "An application-neutral Playwright + pytest framework: browser lifecycle, per-application configuration, failure artifacts, and an AI test-engineering toolkit."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Abhay Ranjan" }]
 requires-python = ">=3.12"
 keywords = ["pytest", "playwright", "testing", "framework", "pytest-plugin"]
+# No "License ::" classifier: PEP 639 deprecated those in favour of the SPDX
+# expression above, and setuptools warns when both are given.
 classifiers = [
     "Framework :: Pytest",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Testing",
 ]

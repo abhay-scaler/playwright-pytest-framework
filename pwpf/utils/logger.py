@@ -18,9 +18,9 @@ LOG_FILENAME = "framework.log"
 class ProjectLogFileHandler(logging.Handler):
     """A file handler that decides *where* to write when the first record arrives.
 
-    This module is imported while the root conftest is still being imported -
-    that is, before `pytest_configure` can pin pytest's rootdir - so resolving
-    the log directory when the handler is constructed would bind the logger to
+    This module is imported while `pwpf.plugin` is still being imported - that
+    is, before the plugin's `pytest_configure` can pin pytest's rootdir - so
+    resolving the log directory when the handler is constructed would bind it to
     whatever root happened to be resolvable at import time. When those differ
     (a `$PWPF_ROOT` that disagrees with pytest's rootdir, say) the logs would go
     one way and every other artifact the other, silently. Deferring to the first

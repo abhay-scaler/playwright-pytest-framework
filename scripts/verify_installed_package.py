@@ -6,9 +6,12 @@ packaging: it cannot tell you whether the wheel contains the right modules,
 whether pytest discovers the plugin through its entry point, or whether the
 scenario schema survives installation.
 
-So this builds a wheel, installs it into a throwaway virtual environment,
-creates a separate consumer project, and runs everything from there with the
-framework source tree nowhere on the path.
+So this builds a wheel, reads its archive manifest, installs it into a
+throwaway virtual environment, creates a separate consumer project, and runs
+everything from there with the framework source tree nowhere on the path. The
+manifest checks are deliberately about the artifact rather than the
+configuration that produced it: `include = ["pwpf*"]` *should* leave `apps/`
+and `tests/` out of the wheel, but only the zip itself says whether it did.
 
     python scripts/verify_installed_package.py [--keep]
 
@@ -32,6 +35,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
+import zipfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -192,6 +197,159 @@ def build_wheel(workdir: Path) -> Path:
     return wheels[0]
 
 
+# Artifact directories and repository-only trees that must never be shipped.
+# `pwpf/ai_testing/` (the validator and its schema) is part of the framework;
+# the top-level `ai_testing/` prompt library is documentation and is not.
+FORBIDDEN_WHEEL_PATHS = (
+    "apps/",
+    "tests/",
+    "docs/",
+    "ai_testing/",
+    "scripts/",
+    "screenshots/",
+    "reports/",
+    "logs/",
+    "traces/",
+    "videos/",
+    "conftest.py",
+    "pytest.ini",
+)
+
+
+def declared_project_metadata() -> dict[str, str]:
+    """Name, version, Python requirement and license, read from pyproject.toml so
+    these checks follow a version bump instead of having to be edited after one."""
+    with (REPO_ROOT / "pyproject.toml").open("rb") as handle:
+        project = tomllib.load(handle)["project"]
+    return {
+        "Name": project["name"],
+        "Version": project["version"],
+        "Requires-Python": project["requires-python"],
+        "License-Expression": project["license"],
+    }
+
+
+def source_package_members() -> set[str]:
+    """Every module and data file the wheel is expected to carry, taken from the
+    source tree rather than from a list that would go stale when a module is
+    added."""
+    members = {
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in (REPO_ROOT / "pwpf").rglob("*.py")
+        if "__pycache__" not in path.parts
+    }
+    members.add("pwpf/ai_testing/schemas/scenario.schema.json")
+    return members
+
+
+def check_wheel_contents(wheel: Path) -> None:
+    """Assert what the built wheel actually contains, from its own manifest.
+
+    The source of truth here is the zip, not the packaging configuration: a
+    `include`/`package-data` entry that silently stopped matching looks exactly
+    like a correct one until something reads the archive. Nothing below depends
+    on the wheel's filename or on the exact name of its .dist-info directory,
+    so a version bump or a metadata revision does not break these checks.
+    """
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+        metadata_files = sorted(n for n in names if n.endswith(".dist-info/METADATA"))
+        if not check(
+            len(metadata_files) == 1,
+            "the wheel carries exactly one .dist-info/METADATA",
+            f"found: {metadata_files}",
+        ):
+            return
+        dist_info = metadata_files[0][: -len("METADATA")]
+
+        missing = sorted(source_package_members() - names)
+        check(
+            not missing,
+            "every pwpf module in the source tree is in the wheel",
+            "missing: " + ", ".join(missing),
+        )
+        check(
+            "pwpf/ai_testing/schemas/scenario.schema.json" in names,
+            "the scenario schema is in the wheel as package data",
+            "\n".join(sorted(n for n in names if "schema" in n)),
+        )
+
+        metadata = archive.read(dist_info + "METADATA").decode("utf-8")
+        declared = declared_project_metadata()
+        core = {k: v for k, v in declared.items() if k != "License-Expression"}
+        missing_fields = [f"{k}: {v}" for k, v in core.items() if f"{k}: {v}" not in metadata]
+        check(
+            not missing_fields,
+            "the wheel's METADATA matches the declared name, version and Python requirement",
+            "missing: " + ", ".join(missing_fields),
+        )
+        expression = declared["License-Expression"]
+        check(
+            f"License-Expression: {expression}" in metadata,
+            "METADATA declares the license as an SPDX expression: " + expression,
+            "\n".join(line for line in metadata.splitlines() if "icense" in line),
+        )
+
+        license_members = sorted(
+            n
+            for n in names
+            if n.startswith(dist_info) and "LICENSE" in n.rsplit("/", 1)[-1].upper()
+        )
+        license_text = "".join(archive.read(n).decode("utf-8") for n in license_members)
+        check(
+            bool(license_members) and "MIT License" in license_text,
+            "the MIT license file itself is in the wheel",
+            f"license members: {license_members}",
+        )
+        check(
+            license_text.strip() == (REPO_ROOT / "LICENSE").read_text(encoding="utf-8").strip(),
+            "the shipped license is this repository's LICENSE, unaltered",
+            f"license members: {license_members}",
+        )
+
+        entry_points_path = dist_info + "entry_points.txt"
+        entry_points = (
+            archive.read(entry_points_path).decode("utf-8") if entry_points_path in names else ""
+        )
+        # Whitespace-insensitive: setuptools writes `name = target`, but the
+        # format allows `name=target`, and that difference is not a defect.
+        compact = "".join(entry_points.split())
+        check(
+            "[pytest11]" in compact and "pwpf.plugin=pwpf.plugin" in compact,
+            "the pytest11 entry point is recorded in the wheel's metadata",
+            entry_points or f"no {entry_points_path} in the wheel",
+        )
+        check(
+            "pwpf-validate-catalog=pwpf.ai_testing.validate_catalog:main" in compact,
+            "the catalog console script is recorded in the wheel's metadata",
+            entry_points,
+        )
+
+        # One rule, stated two ways: nothing outside pwpf/ and the .dist-info
+        # belongs in the wheel, and these specific trees least of all.
+        strays = sorted(
+            n for n in names if not n.startswith("pwpf/") and not n.startswith(dist_info)
+        )
+        check(
+            not strays,
+            "the wheel contains nothing beyond the pwpf package and its metadata",
+            "unexpected: " + ", ".join(strays),
+        )
+        leaked = sorted(
+            n for n in names for bad in FORBIDDEN_WHEEL_PATHS if n == bad or n.startswith(bad)
+        )
+        check(
+            not leaked,
+            "application code, tests, docs, the prompt library and artifacts are excluded",
+            "leaked: " + ", ".join(leaked),
+        )
+        check(
+            not [n for n in names if n.endswith(".pyc") or "__pycache__" in n],
+            "no compiled bytecode is shipped in the wheel",
+            "\n".join(sorted(n for n in names if n.endswith(".pyc"))),
+        )
+
+
 def make_venv(workdir: Path, wheel: Path) -> Path:
     venv_dir = workdir / "venv"
     # A clean environment: nothing from the surrounding interpreter is visible,
@@ -261,6 +419,9 @@ def main(argv: list[str] | None = None) -> int:
         env["PYTHONDONTWRITEBYTECODE"] = "1"
 
         print("\nchecks:")
+
+        # 0. The wheel itself, before anything is installed from it.
+        check_wheel_contents(wheel)
 
         # 1. The framework really is imported from the installed distribution.
         proc = run([str(python), "-c", "import pwpf; print(pwpf.__file__)"], consumer, env)

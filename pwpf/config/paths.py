@@ -15,8 +15,8 @@ A project root is resolved in this order, and the first one that applies wins:
 1. **An explicit root from the caller** - `pwpf-validate-catalog --root`,
    or any code calling `set_project_root(..., source="caller")`. The caller is
    being deliberate, so this outranks everything.
-2. **The active pytest session's rootdir** - the root conftest passes
-   `config.rootpath` here in `pytest_configure`, which is pytest's own
+2. **The active pytest session's rootdir** - the plugin passes
+   `config.rootpath` here in its `pytest_configure`, which is pytest's own
    authoritative answer and already accounts for `-c`, `--rootdir` and ini
    discovery.
 3. **`PWPF_ROOT`** - for code that runs outside pytest and cannot pass a root.

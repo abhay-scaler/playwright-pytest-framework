@@ -166,7 +166,7 @@ def test_the_pytest_rootdir_outranks_the_environment_and_the_cwd(tmp_path, monke
 
 def test_this_session_resolves_to_pytests_own_rootpath(pytestconfig):
     """The live integration: inside a pytest run the root is whatever pytest
-    decided, pinned by the root conftest's pytest_configure."""
+    decided, pinned by the plugin's pytest_configure."""
     assert project_root() == Path(pytestconfig.rootpath).resolve()
 
 

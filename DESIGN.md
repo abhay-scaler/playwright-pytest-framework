@@ -178,9 +178,13 @@ A single test run goes through these stages:
    session, a `pytest_configure` hook clears `reports/allure-results/` of any results left over
    from a previous run — allure-pytest never does this itself, so without it every run's results
    would accumulate in that directory forever. At the end of the session, `pytest_terminal_summary`
-   post-processes `reports/pytest_report.html`, embedding any failure screenshots from *this* run
+   post-processes the pytest-html report, embedding any failure screenshots from *this* run
    directly into the file — recursively, so per-app subdirectories are found, and namespaced
-   (`<app>__<test>.png`) so two apps' identically-named screenshots never collide. A `since=`
+   (`<app>__<test>.png`) so two apps' identically-named screenshots never collide. *Which* file
+   it post-processes comes from the config: pytest-html's own `--html` value, resolved against the
+   directory pytest was invoked from exactly as pytest-html resolves it, with `report_dir()` as
+   the fallback when no report was requested. A hardcoded `reports/pytest_report.html` was right
+   for one `--html` value and silently embedded nothing for any other. A `since=`
    timestamp (recorded when `pwpf/plugin.py` is imported, before any test in the run can have
    written anything) excludes screenshots left over from a previous run rather than silently re-embedding
    stale evidence. Both the Allure-results cleanup and the screenshot-embedding step are guarded to
@@ -792,10 +796,14 @@ nothing in `pwpf/` may assume the framework sits at the root of the project unde
 - **What is deliberately not in the wheel:** `apps/`, `tests/`, `docs/` and the `ai_testing/`
   prompt library. The prompts and templates are repository documentation for now; shipping them
   as package data is a separate decision.
-- **Proof, not assertion:** `scripts/verify_installed_package.py` builds a wheel, installs it
-  with its real dependencies into a clean virtual environment, generates a consumer project and
-  runs it with the framework source tree nowhere on the path — checking plugin discovery,
-  application discovery, artifact locations, the console script and the packaged schema.
+- **Proof, not assertion:** `scripts/verify_installed_package.py` builds a wheel, reads its
+  archive manifest, installs it with its real dependencies into a clean virtual environment,
+  generates a consumer project and runs it with the framework source tree nowhere on the path —
+  checking plugin discovery, application discovery, artifact locations, the console script and
+  the packaged schema. The manifest half is deliberately about the artifact rather than the
+  configuration that produced it: `include = ["pwpf*"]` *should* keep `apps/`, `tests/`, `docs/`,
+  the prompt library and the root `conftest.py` out of the wheel, but only the zip says whether
+  it did, and `tests/test_wheel_contents.py` checks those assertions fail when they should.
 
 ## Adding a New Application
 

@@ -20,7 +20,7 @@ The policy runs in both directions:
 * a production-marked test must belong to a declared production application -
   a stray marker means either the marker or the declaration is wrong.
 
-Application ownership follows the same rule as the root conftest: the first path
+Application ownership follows the same rule as pwpf/plugin.py: the first path
 segment under tests/ names the application, provided it is not a generic suite
 directory and a matching apps/<name>/ package exists. A production marker on a
 test outside any application is reported as exactly that, rather than being
@@ -168,7 +168,7 @@ def production_apps(root: Path | None = None) -> tuple[set[str], list[str]]:
 
 # Mirrors `_GENERIC_SUITE_DIRS` in pwpf/plugin.py: suite-type folders that hold
 # tests not owned by any one application. Kept in step with it by
-# test_the_application_ownership_rule_matches_conftest below.
+# test_the_application_ownership_rule_matches_the_plugin below.
 GENERIC_SUITE_DIRS = frozenset({"smoke", "ui", "regression", "api", "tmp"})
 
 
@@ -296,8 +296,8 @@ def _plugin_generic_suite_dirs(root: Path | None = None) -> frozenset[str] | Non
 
 
 def test_the_application_ownership_rule_matches_the_plugin():
-    """R2 only holds while the two agree on what an application is. If the root
-    conftest gains or loses a generic suite directory, this fails rather than
+    """R2 only holds while the two agree on what an application is. If the
+    plugin gains or loses a generic suite directory, this fails rather than
     letting the policy quietly diverge from how tests are actually labelled."""
     from_plugin = _plugin_generic_suite_dirs()
 
