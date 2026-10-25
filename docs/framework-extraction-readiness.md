@@ -38,7 +38,7 @@ environment, copies the consumer-owned half of the repository into a temporary p
 `pwpf/`, **without** the root `conftest.py` and **without** the framework's self-tests, and runs
 that project from there.
 
-**Result: 16/16 checks, exit 0** [V]
+**Result: 18/18 checks, exit 0** [V]
 
 ```
   [PASS] the consumer project contains no pwpf/ and no root conftest.py
@@ -58,11 +58,18 @@ that project from there.
   [PASS] no artifacts are written into the installed package
   [PASS] no artifacts appeared in the framework checkout
   [PASS] scenario-catalog validation passes in the consumer context
+  [PASS] the pytest-html integration engaged under the [report] extra
+  [PASS] a base install (no extras) is rejected by this consumer's pytest.ini, as documented
 ```
 
 The four smoke tests **executed**, they did not skip: the run installs Chromium for the Playwright
 version that was actually resolved. Selection expressions are the repository's own, `production`
 excluded, so no live-site test runs. The only writes are to a temporary directory, removed on exit.
+
+The consumer environment is built from the distribution's own extras - `[ai,report]` - plus the one
+dependency that is genuinely the consumer's (`pytest-xdist`, for `-n auto`), so what it exercises
+is the documented dependency contract rather than a list maintained by hand. A second, base-only
+environment proves those extras are load-bearing (§5.1).
 
 **It fails loudly rather than quietly.** `pwpf.__file__` must start with the throwaway
 `site-packages`; the checkout must appear in neither `sys.path` nor `PYTHONPATH` (both are
@@ -92,7 +99,7 @@ files.
 |---|---|---|---|
 | `apps/` (33: 4 applications) | The applications under test, their config, pages, locators, test data and scenarios | None | — |
 | `tests/api/`, `tests/myntra/`, `tests/sample_app/`, `tests/uitesting_playground/`, `tests/web_search/`, `tests/tmp/` (13) | Consumer-owned tests, including the four `tests/<app>/conftest.py` that bind `app_config` | None — the dry run runs exactly these [V] | — |
-| `pytest.ini` | Selection policy, markers and reporting flags are the consumer's | Must declare `pytest-html`/`pytest-xdist` itself — finding 5.1 | Medium until that is decided |
+| `pytest.ini` | Selection policy, markers and reporting flags are the consumer's | Install the framework's `[report]` extra for `--html`, and declare `pytest-xdist` for `-n auto` — settled, §5.1 | Low |
 | `conftest.py` (root, one line) | Exists only to load the plugin from the source tree | **Delete.** The entry point supplies it; the dry run's consumer has no conftest and still gets fixtures and markers [V] | Low |
 | `requirements.in` / `requirements.txt`, `requirements-ai.in` / `requirements-ai.txt` | The test-runtime lock for *this* project | Replace the implicit framework-from-checkout with an explicit pinned dependency (§4) | Medium — this is the actual switchover |
 | `tests/test_ci_production_exclusion.py`, `tests/test_quarantine_policy.py` (2) | Read **this repository's** `.github/workflows/ci.yml` and `pytest.ini` [V] — they police consumer policy, not framework code | `_plugin_generic_suite_dirs()` reads `pwpf/plugin.py` by path; after extraction it must read the **installed** module's source instead | Medium: a real code change, named here so it is not a surprise |
@@ -146,12 +153,26 @@ since `pip wheel` and `python -m build` are already proven to work from the sour
 
 ## 5. Boundary findings, all verified
 
-**5.1 The consumer owns two dependencies the framework does not declare.** `pytest.ini`'s
-`addopts` ask for `--html` and the repository runs `-n auto`, but `pytest-html` and
-`pytest-xdist` live in the framework's `dev` extra — development tooling, not something every
-consumer needs. The dry run had to install them explicitly for this repository's `pytest.ini` to
-work at all [V]. Decide at extraction: either the consumer declares them (correct, and the dry
-run documents it) or the framework grows a `report` extra for them. **[?]**
+**5.1 Reporting and parallelism — settled.** `pytest.ini` asks for `--html` and this repository
+runs `-n auto`, while `pytest-html` and `pytest-xdist` were only in the framework's `dev` extra.
+Traced and measured [V]:
+
+- A base install runs the framework perfectly well: with no `--html` the embed step reports that
+  there is no report, and nothing else changes.
+- A consumer whose ini *does* pass `--html` without pytest-html installed gets
+  `error: unrecognized arguments: --html=...` and **exit 4** before collection. pytest does not
+  degrade for an option no installed plugin defines.
+- `pwpf/plugin.py` and `pwpf/utils/report_embedder.py` exist in part to integrate with
+  pytest-html - reading `--html` back from the config and embedding failure screenshots into that
+  file - so the dependency is the framework's to *name*, even though it is not the framework's to
+  *require*.
+- Nothing in `pwpf/` needs pytest-xdist: the `config.workerinput` guards and the worker id in the
+  log path behave the same whether it is installed or not, and `-n auto` is a choice about how a
+  suite is run.
+
+So the framework gained a **`report` extra holding `pytest-html` alone**, `dev` takes `[report]`
+rather than repeating the floor, and **pytest-xdist stays the consumer's dependency** - the
+framework does not declare, even optionally, something it does not use.
 
 **5.2 Playwright's browser build follows the resolved Playwright version.** The framework's floor
 is `playwright>=1.48.0`, so a consumer can resolve a version whose browser build is not what the

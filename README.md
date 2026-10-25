@@ -151,10 +151,21 @@ consumer project needs no `conftest.py` to get the fixtures, the markers or the 
 handling:
 
 ```bash
-pip install playwright-pytest-framework          # from a wheel, index or path
-pip install "playwright-pytest-framework[ai]"    # plus the scenario-catalog validator
-python -m playwright install chromium            # browsers, once
+pip install playwright-pytest-framework              # from a wheel, index or path
+pip install "playwright-pytest-framework[report]"    # plus the pytest-html report integration
+pip install "playwright-pytest-framework[ai]"        # plus the scenario-catalog validator
+python -m playwright install chromium                # browsers, once
 ```
+
+Two things the base install deliberately leaves out, because the framework runs without them:
+
+- **`[report]`** — `pytest-html`. The plugin embeds each run's failure screenshots into the HTML
+  report named by `--html`; without the extra that step finds no report and says so, and nothing
+  else changes. A `pytest.ini` that passes `--html` needs the extra, since pytest rejects an
+  option no installed plugin defines before it collects anything.
+- **`pytest-xdist`** — the consumer's own dependency, not an extra here. Nothing in the framework
+  requires it; `-n auto` is a choice about how you run your suite, and the framework's
+  xdist-master guards behave the same whether it is installed or not.
 
 The consumer keeps its own layout — `pytest.ini`, `apps/<app>/`, `tests/<app>/` — and pytest
 discovers the plugin automatically through the `pytest11` entry point. Everything is resolved
