@@ -352,16 +352,21 @@ def test_main_exits_one_and_prints_the_findings(tmp_path, capsys):
 
 
 def test_this_repositorys_documentation_resolves(capsys):
-    """The baseline the split plan depends on. Counts are asserted for internal
-    consistency rather than pinned to today's totals: a new document link should
-    not fail this test, a broken one must."""
+    """This repository's own documentation, whatever it currently is.
+
+    No count floors: the framework ships a README and no `docs/` pages by
+    design, so a lower bound on links would assert a documentation shape rather
+    than its correctness. The consumer project this was extracted from asserts
+    its own, larger set the same way. What is pinned is that at least one
+    document is scanned - an empty scan must not pass as "everything
+    resolves" - and that the counts stay internally consistent.
+    """
     findings, counts, scanned = _check(REPO_ROOT)
 
     assert not findings, "\n".join(f.render(REPO_ROOT) for f in findings)
-    assert scanned >= 20, scanned
+    assert scanned >= 1, scanned
     assert counts.relative == counts.file + counts.file_anchor
     assert counts.fragments == counts.file_anchor + counts.in_page
-    assert counts.relative > 50 and counts.fragments > 20, counts.render()
 
 
 def test_the_checker_is_runnable_as_a_script():
