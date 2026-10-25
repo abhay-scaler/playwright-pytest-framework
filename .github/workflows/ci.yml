@@ -1,91 +1,112 @@
 name: CI
 
+# The framework's own CI. It gates three things and nothing else: that the
+# source is clean, that its self-tests pass on every interpreter the
+# distribution claims to support, and that the built artifact works when
+# installed. The consumer project's gates - application smoke and regression
+# suites, cross-browser sweeps, the scenario-catalog job and the
+# production-exclusion policy - belong to the repository that owns those
+# applications and stayed there.
 on:
   push:
     branches: [main, dev]
   pull_request:
-  schedule:
-    # Nightly full regression + cross-browser sweep, 03:00 UTC.
-    - cron: "0 3 * * *"
   workflow_dispatch:
-    inputs:
-      cross_browser:
-        description: "Also run the cross-browser (Firefox/WebKit) suite"
-        type: boolean
-        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Runs on every trigger. Fast, no browser needed - fails fast before any
-  # job pays for a Playwright install.
+  # Fast, no browser: fails before any job pays for a Playwright install.
   lint-and-type-check:
-    name: Lint & Type Check
+    name: Lint & Type Check (${{ matrix.python-version }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject declares requires-python = ">=3.12". Both ends of what is
+        # actually claimed are checked rather than one of them: a declaration
+        # nothing exercises is a promise, not a guarantee.
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+          # The dependencies are the distribution's own, so the cache follows
+          # the file that declares them.
+          cache-dependency-path: pyproject.toml
+      - name: Install the framework and its dev tooling
+        # The declared extras, not a second list: `dev` carries the lint and
+        # type tooling and takes `[report]`, and `ai` adds the validator's
+        # PyYAML and jsonschema so its self-tests run instead of skipping.
+        run: pip install -e ".[dev,ai]"
       - name: Ruff
         run: ruff check .
       - name: Black
         run: black --check .
       - name: mypy
         run: mypy .
+      # Standard library only, no browser: it belongs with the other
+      # seconds-long gates. It fails on a missing target, an unresolved
+      # `#fragment`, or a link with no target at all - the README is this
+      # repository's whole documentation, so its own cross-references are what
+      # this protects.
+      - name: Documentation links
+        run: python scripts/check_doc_links.py
 
-  # PR gate. Deliberately narrow: framework self-tests (fast, no browser) +
-  # the smoke suite (Chromium only). Keeps PR feedback quick; full coverage
-  # runs on merge and nightly instead.
-  pr-smoke:
-    name: PR Smoke (Chromium)
-    if: github.event_name == 'pull_request'
+  self-tests:
+    name: Self-Tests (${{ matrix.python-version }})
     needs: lint-and-type-check
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Resolve pinned Playwright version
+          cache-dependency-path: pyproject.toml
+      - name: Install the framework and its dev tooling
+        run: pip install -e ".[dev,ai]"
+      # The browser build follows the Playwright version pip actually resolved,
+      # not a version read out of a file: the framework declares a floor
+      # (playwright>=1.48.0), so the resolved version is the only honest source
+      # for the cache key and for what `playwright install` fetches.
+      - name: Resolve the installed Playwright version
         id: playwright-version
-        run: echo "version=$(grep -oP '(?<=^playwright==)[0-9.]+' requirements.txt)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          # Keying on the exact pinned Playwright version means a version
-          # bump always misses the cache and installs fresh - a stale cache
-          # can never be reused for an incompatible browser build.
           key: playwright-${{ runner.os }}-chromium-${{ steps.playwright-version.outputs.version }}
+      # tests/test_console_logging.py drives the plugin's console- and
+      # page-error listeners through the `page` fixture, so this job needs a
+      # real browser. Chromium only: nothing in the framework's own suite is
+      # engine-specific.
       - name: Install Playwright browser (Chromium)
         run: python -m playwright install --with-deps chromium
       - name: Framework self-tests
         env:
           CI: true
           HEADLESS: true
-          ENVIRONMENT: ci
-        run: pytest tests/test_*.py --junitxml=reports/junit-framework.xml
-      - name: Smoke suite
-        env:
-          CI: true
-          HEADLESS: true
-          ENVIRONMENT: ci
-        run: pytest -m smoke -n auto --junitxml=reports/junit-smoke.xml
+        # The exclusions are kept exactly as the consumer's gates carry them.
+        # Nothing in this repository is marked `production` or `quarantined`
+        # today - both markers are the framework's to register and a
+        # consumer's to apply - and an invocation that quietly dropped them
+        # would be the wrong thing to inherit if that ever changes.
+        run: pytest -m "not production and not quarantined" --junitxml=reports/junit-self-tests.xml
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: test-artifacts-pr-smoke
+          name: test-artifacts-self-tests-${{ matrix.python-version }}
           path: |
             reports/
             screenshots/
@@ -93,98 +114,24 @@ jobs:
             videos/
           if-no-files-found: ignore
 
-  # Full suite, Chromium, on merge to main/dev, nightly, and manual dispatch.
-  regression:
-    name: Regression Suite (Chromium)
-    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    needs: lint-and-type-check
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Resolve pinned Playwright version
-        id: playwright-version
-        run: echo "version=$(grep -oP '(?<=^playwright==)[0-9.]+' requirements.txt)" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-chromium-${{ steps.playwright-version.outputs.version }}
-      - name: Install Playwright browser (Chromium)
-        run: python -m playwright install --with-deps chromium
-      - name: Run full suite
-        env:
-          CI: true
-          HEADLESS: true
-          ENVIRONMENT: ci
-        # Sharded naturally by application today (tests/<app>/...); the same
-        # apps/<app> boundary this framework already uses is what a future
-        # CI matrix would shard on, without any new tooling.
-        run: pytest -n auto --junitxml=reports/junit.xml
-      - name: Upload test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: test-artifacts-regression
-          path: |
-            reports/
-            screenshots/
-            traces/
-            videos/
-          if-no-files-found: ignore
-
-  # Firefox + WebKit, full suite. Nightly by default, or on-demand via
-  # workflow_dispatch - never on every PR, since it roughly triples runtime
-  # for coverage most changes don't need.
-  cross-browser:
-    name: Cross-Browser Regression
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.cross_browser)
+  # The artifact, not the source tree: builds the wheel, reads its manifest,
+  # installs it with its declared dependencies into a clean environment and
+  # runs a generated consumer project against it with this checkout nowhere on
+  # the path. 24 checks.
+  installed-package:
+    name: Installed Package (${{ matrix.python-version }})
     needs: lint-and-type-check
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        browser: [firefox, webkit]
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Resolve pinned Playwright version
-        id: playwright-version
-        run: echo "version=$(grep -oP '(?<=^playwright==)[0-9.]+' requirements.txt)" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ steps.playwright-version.outputs.version }}
-      - name: Install Playwright browser (${{ matrix.browser }})
-        run: python -m playwright install --with-deps ${{ matrix.browser }}
-      - name: Run full suite
-        env:
-          CI: true
-          HEADLESS: true
-          ENVIRONMENT: ci
-          BROWSER: ${{ matrix.browser }}
-        run: pytest -n auto --junitxml=reports/junit-${{ matrix.browser }}.xml
-      - name: Upload test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: test-artifacts-cross-browser-${{ matrix.browser }}
-          path: |
-            reports/
-            screenshots/
-            traces/
-            videos/
-          if-no-files-found: ignore
+          cache-dependency-path: pyproject.toml
+      - name: Verify the installed distribution
+        run: python scripts/verify_installed_package.py

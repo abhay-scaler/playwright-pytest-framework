@@ -7,7 +7,7 @@ def test_environment_settings_are_exposed(monkeypatch):
     monkeypatch.setenv("ACTION_TIMEOUT", "12345")
     monkeypatch.setenv("RETRY_COUNT", "3")
 
-    import config.settings as settings
+    import pwpf.config.settings as settings
 
     reloaded = importlib.reload(settings)
 
