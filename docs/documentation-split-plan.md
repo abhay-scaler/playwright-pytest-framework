@@ -217,17 +217,28 @@ Documentation consequence: the rule-code table in `docs/ai-testing/scenario-auth
 linked from there); the lifecycle, statuses and approval governance in the same document are
 consumer policy and stay. That is a **split within one document**, scheduled in Stage 2.
 
-### 4.2 Still unresolved
+### 4.2 Settled at Stage 3
 
-- **[?]** Whether the framework repository publishes documentation at all beyond its README, or
-  keeps DESIGN-style internals in-repo only. This decides whether §§3–7 and 9 become one
-  `DESIGN.md` there or get folded into the README.
-- **[?]** Whether the consumer repository keeps a trimmed `DESIGN.md` at all once §§1, 3–7, 9 and
-  12 leave, or whether its remaining content (§2 consumer half, §8 consumer jobs, §10, §11, the
-  consumer onboarding guide) is better served as `docs/` pages.
+Both were deferred until the framework draft existed and the shape was visible. It now does
+([framework-readme-draft.md](framework-readme-draft.md)), so:
 
-Both are editorial, both can be decided at Stage 3 when the framework draft exists and the shape is
-visible, and neither blocks Stages 0–2.
+**5. The framework repository publishes a README and nothing else, to begin with. [R]**
+The draft carries the substance of DESIGN §§1, 3–7, 9 and 12 in **303 lines** [V] — the install
+contract, the fixtures and markers, the `AppConfig` key table, root resolution, reporting,
+the conventions a consumer must follow, the verification script and the design principles. A
+separate `DESIGN.md` beside it would be a second place maintaining the same contracts, which is
+exactly what decision 1 forbids, and the 403 lines it would come from are largely explanations of
+code that a reader of *that* repository can open directly. Adding a document later is cheap;
+un-splitting two that have drifted is not. The trigger for splitting: when the README stops being
+readable end to end, or when internals need an audience (contributors) distinct from users.
+
+**6. The consumer repository keeps a trimmed `DESIGN.md`, under that name. [R]**
+What remains after §§1, 3–7, 9 and 12 leave is roughly 600 lines and still coherent: §2's consumer
+tree, §8's consumer jobs and the production-exclusion policy, §10's chronology (decision 3), §11's
+pointer into the AI-testing documentation, and the 187-line onboarding guide. That is a document,
+not a scattering of pages. Keeping the filename also keeps the **18 links** that point at
+`DESIGN.md` working [V] - up from the 15 the inventory counted, since the later stages added
+references of their own; moving the remainder into `docs/` pages would break them for no gain.
 
 ## 5. Two stale facts, re-confirmed on `dev` at `7bcc4b4`
 
