@@ -175,12 +175,36 @@ A single test run goes through these stages:
    its application name, plus the run's `browser` (from `BROWSER_NAME`) and `environment` (from
    `ENVIRONMENT`), so a nightly cross-browser failure is identifiable from the Allure result
    itself rather than requiring someone to infer it from the CI job name. At the start of the
-   session, a `pytest_configure` hook clears `reports/allure-results/` of any results left over
-   from a previous run — allure-pytest never does this itself, so without it every run's results
-   would accumulate in that directory forever. At the end of the session, `pytest_terminal_summary`
-   post-processes `reports/pytest_report.html`, embedding any failure screenshots from *this* run
-   directly into the file — recursively, so per-app subdirectories are found, and namespaced
-   (`<app>__<test>.png`) so two apps' identically-named screenshots never collide. A `since=`
+   session, a `pytest_configure` hook clears the previous run's Allure results — allure-pytest
+   never does this itself, so without it every run's results would accumulate in that directory
+   forever. Three things bound what that deletes, because it is the one place the framework
+   removes files it did not just write:
+   *Which directory* is read off the config — allure-pytest resolves `--alluredir` with
+   `os.path.abspath`, against the directory pytest was invoked from, so cleaning
+   `allure_results_dir()` under the project root emptied the wrong folder whenever the two
+   differed. That resolution copies allure-pytest exactly, including *not* expanding `~` or
+   `$VAR` (which it does not): expanding `~` pointed the cleanup at a real `$HOME` directory
+   Allure never writes to.
+   *What inside it* is only Allure's own artefacts — the UUID-named `-result.json`,
+   `-container.json`, `-globals.json` and `-attachment.*` files of `allure_commons/model2.py`.
+   `environment.properties`, `executor.json`, `categories.json`, `history/` and anything else a
+   project keeps there are inputs to `allure generate`, not leftovers, and no directory is ever
+   removed.
+   *And when not at all*: with no `--alluredir` nothing is written, so nothing is cleaned — a
+   guessed directory would delete a previous run's results that this run is not going to replace
+   — and a directory that is, or contains, the project root or the invocation directory is
+   refused with a logged diagnostic rather than cleaned. Those boundaries are compared as
+   *resolved* paths, so a symlink cannot disguise one, and a file that will not delete is
+   logged and stepped over: housekeeping must never be the thing that ends a run, which is
+   what an unguarded `OSError` in `pytest_configure` had been.
+   At the end of the session, `pytest_terminal_summary` post-processes the pytest-html report,
+   embedding any failure screenshots from *this* run directly into the file — recursively, so
+   per-app subdirectories are found, and namespaced (`<app>__<test>.png`) so two apps'
+   identically-named screenshots never collide. *Which* file
+   it post-processes comes from the config: pytest-html's own `--html` value, resolved against the
+   directory pytest was invoked from exactly as pytest-html resolves it, with `report_dir()` as
+   the fallback when no report was requested. A hardcoded `reports/pytest_report.html` was right
+   for one `--html` value and silently embedded nothing for any other. A `since=`
    timestamp (recorded when `pwpf/plugin.py` is imported, before any test in the run can have
    written anything) excludes screenshots left over from a previous run rather than silently re-embedding
    stale evidence. Both the Allure-results cleanup and the screenshot-embedding step are guarded to
@@ -691,7 +715,12 @@ running under real `pytest -n auto` load:
 - **`reports/allure-results/` accumulated forever** — allure-pytest never clears its own output
   directory, so every run added another UUID-named result per test with nothing ever removing old
   ones. Fixed with a `pytest_configure` hook (`pwpf/utils/allure_cleanup.py`, same xdist-master guard as
-  above) that clears the directory once at the start of each run.
+  above) that clears, once at the start of each run, Allure's own artefacts from the directory
+  the run is actually writing to — taken from `--alluredir` and resolved the way allure-pytest
+  resolves it, since the first version of this cleanup resolved it from the project root (so a
+  run started from a subdirectory cleared nothing of the sort) and the second expanded `~` (so
+  it deleted from a real `$HOME` directory Allure never writes to). Both are pinned by
+  `tests/test_allure_cleanup.py`, which also covers the files it must leave alone.
 
 ---
 
@@ -792,10 +821,14 @@ nothing in `pwpf/` may assume the framework sits at the root of the project unde
 - **What is deliberately not in the wheel:** `apps/`, `tests/`, `docs/` and the `ai_testing/`
   prompt library. The prompts and templates are repository documentation for now; shipping them
   as package data is a separate decision.
-- **Proof, not assertion:** `scripts/verify_installed_package.py` builds a wheel, installs it
-  with its real dependencies into a clean virtual environment, generates a consumer project and
-  runs it with the framework source tree nowhere on the path — checking plugin discovery,
-  application discovery, artifact locations, the console script and the packaged schema.
+- **Proof, not assertion:** `scripts/verify_installed_package.py` builds a wheel, reads its
+  archive manifest, installs it with its real dependencies into a clean virtual environment,
+  generates a consumer project and runs it with the framework source tree nowhere on the path —
+  checking plugin discovery, application discovery, artifact locations, the console script and
+  the packaged schema. The manifest half is deliberately about the artifact rather than the
+  configuration that produced it: `include = ["pwpf*"]` *should* keep `apps/`, `tests/`, `docs/`,
+  the prompt library and the root `conftest.py` out of the wheel, but only the zip says whether
+  it did, and `tests/test_wheel_contents.py` checks those assertions fail when they should.
 
 ## Adding a New Application
 
