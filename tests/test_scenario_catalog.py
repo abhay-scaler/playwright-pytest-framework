@@ -1,22 +1,25 @@
 """Self-tests for the scenario catalog validator.
 
 Every case builds a throwaway repository under `tmp_path` and runs
-`validate_catalog` against it, so nothing here touches the committed catalog,
-the browser or the network. Two cases at the end do look at the real catalog -
-read-only, asserting it is valid and that no scenario claims a live production
-site may gate CI.
+`validate_catalog` against it, so nothing here touches the browser or the
+network - and nothing here needs a catalog of its own, which is what makes
+these tests the framework's to keep.
 
-The module skips entirely when `requirements-ai.txt` is not installed: PyYAML
-and jsonschema are deliberately absent from the test-runtime lock, and CI
-validates the catalog in its own job instead (see .github/workflows/ci.yml).
+Two further cases used to live at the end of this file, asserting that *this*
+repository's committed catalog is valid and that no scenario claims a live
+production site may gate CI. Both are assertions about a consumer's catalogs
+and its CI policy, so they stayed with the consumer at extraction; the rule
+behaviour below is the framework's.
+
+The module skips entirely without PyYAML and jsonschema, which arrive with the
+`ai` extra: `pip install -e ".[ai]"`.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from pwpf.ai_testing.validate_catalog import discover_catalogs, validate_catalog
-from pwpf.config.paths import project_root
+from pwpf.ai_testing.validate_catalog import validate_catalog
 
 yaml = pytest.importorskip("yaml", reason="requirements-ai.txt is not installed")
 pytest.importorskip("jsonschema", reason="requirements-ai.txt is not installed")
@@ -378,23 +381,3 @@ def test_an_unsupported_schema_version_is_rejected(tmp_path):
     findings = validate_catalog(_repo(tmp_path, catalogs={"shopping.yaml": document}))
     assert "E-SCHEMA" in _rules(findings), _messages(findings)
     assert "E-VERSION" in _rules(findings), _messages(findings)
-
-
-def test_the_committed_catalog_is_valid():
-    findings = validate_catalog(project_root())
-    assert findings == [], _messages(findings)
-    assert discover_catalogs(project_root()), "no catalog files were discovered"
-
-
-def test_no_committed_scenario_lets_a_live_site_gate_ci():
-    """The catalog-side half of the production-exclusion policy. The CI half -
-    that every pytest invocation carries -m "not production" - is checked by
-    tests/test_ci_production_exclusion.py, which this does not duplicate."""
-    for path in discover_catalogs(project_root()):
-        document = yaml.safe_load(path.read_text(encoding="utf-8"))
-        for scenario in document["scenarios"]:
-            environment = scenario["environment"]
-            if environment["target"] == "live-production":
-                assert environment["ci_eligible"] is False, scenario["id"]
-                assert scenario["status"] != "ACTIVE_REGRESSION", scenario["id"]
-                assert "production" in scenario["automation"]["markers"], scenario["id"]
