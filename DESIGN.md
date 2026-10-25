@@ -839,6 +839,12 @@ nothing in `pwpf/` may assume the framework sits at the root of the project unde
   it did, and `tests/test_wheel_contents.py` checks those assertions fail when they should. CI
   runs the script on every trigger as the **Installed Package** job (§8), so this is a gate
   rather than a thing somebody remembers to run.
+- **The extraction itself is planned, not started.** What belongs to the framework, what belongs
+  to this consumer repository, how the dependency would be pinned, and a dry run that proves this
+  repository's own `apps/` and `tests/<app>/` pass against the installed wheel with the checkout
+  nowhere on the path, are in
+  [docs/framework-extraction-readiness.md](docs/framework-extraction-readiness.md)
+  (`scripts/extraction_dry_run.py`).
 
 ## Adding a New Application
 
