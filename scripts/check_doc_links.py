@@ -1,11 +1,12 @@
 """Check that every documentation link - and every heading fragment - resolves.
 
-Stage 0 of [docs/documentation-split-plan.md]: 81 relative links hold this
-documentation together and 31 of them carry a `#fragment`, and nothing checks
-either. Five of those fragments point into `DESIGN.md`/`README.md`, the two
-documents the split divides, so they are the ones a careless heading edit will
-break - silently, because a link whose file exists and whose anchor does not
-renders as a link that quietly scrolls nowhere.
+A link whose file exists and whose anchor does not renders as a link that
+quietly scrolls nowhere, so file existence alone is not enough: this resolves
+both. It was written for the consumer project this framework was extracted
+from, where 115 relative links and 34 fragments hold the documentation
+together, and it runs here for the same reason at a smaller scale - the README
+is this repository's entire documentation, and its table of contents and
+cross-references are worth a gate rather than a reader's patience.
 
     python scripts/check_doc_links.py [--root DIR]
 
