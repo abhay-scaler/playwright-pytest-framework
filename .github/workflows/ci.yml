@@ -38,6 +38,12 @@ jobs:
         run: black --check .
       - name: mypy
         run: mypy .
+      # Documentation is checked here rather than in a job of its own: it needs
+      # no dependency (the checker is standard library only) and no browser, so
+      # it belongs with the other seconds-long gates. It fails on a missing
+      # target, an unresolved `#fragment`, or a link with no target at all.
+      - name: Documentation links
+        run: python scripts/check_doc_links.py
 
   # Scenario catalog + traceability. Its own job because it is the only thing
   # that needs requirements-ai.txt (PyYAML + jsonschema): installing those in
