@@ -212,12 +212,17 @@ Exercised in both contexts rather than one: the module this session imported, an
 subprocess — a real `pwpf` package tree outside a generated consumer project that has no `pwpf/`
 of its own [V]. That second test fails against the path-based version [V].
 
-**5.5 Documentation is the most entangled asset.** 79 relative links resolve today [V]; of those,
-**9 cross from the AI-toolkit documents into framework paths**, **7 point into consumer paths**, and
-**15 point at `DESIGN.md`/`README.md`**, which themselves describe both halves (1029 and 487 lines).
-Splitting the prose is the largest single piece of extraction work and the easiest to get wrong —
-a broken link check is the cheapest guard and already exists as a one-file script pattern in this
-repository's review history.
+**5.5 Documentation is the most entangled asset.** **83** relative links and **31** heading
+fragments resolve today — run `python scripts/check_doc_links.py` for the current figures, now
+machine-checked rather than hand-counted. This paragraph said 79 until Stage 0 of the split plan
+added that checker; the plan's own inventory was taken at 81, before the plan and this sentence
+added links of their own. Of those links, **9 cross from the AI-toolkit documents
+into framework paths**, **7 point into consumer paths**, and **22 point at
+`DESIGN.md`/`README.md`**, which themselves describe both halves. The full inventory, the
+boundary-crossing analysis and the staged plan are in
+[documentation-split-plan.md](documentation-split-plan.md). Splitting the prose is the largest
+single piece of extraction work and the easiest to get wrong — the link and fragment check is the
+cheapest guard, which is why it came first.
 
 **5.6 The root `conftest.py` becomes unnecessary.** It exists so the source tree can develop the
 plugin. The dry run's consumer has none and still receives every fixture and marker [V], so it is
