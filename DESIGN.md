@@ -420,7 +420,7 @@ tell which worker produced which line.
 
 ## 8. CI/CD Flow
 
-GitHub Actions (`.github/workflows/ci.yml`) runs as six jobs rather than one, so a PR gets fast
+GitHub Actions (`.github/workflows/ci.yml`) runs as seven jobs rather than one, so a PR gets fast
 feedback without giving up full-suite and cross-browser coverage:
 
 1. **Lint & Type Check** — `ruff check .`, `black --check .`, `mypy .`. Runs on every trigger
@@ -430,15 +430,23 @@ feedback without giving up full-suite and cross-browser coverage:
    `requirements-ai.txt` (PyYAML + jsonschema). Every trigger. No pytest, no browser, no
    network, so it needs no Playwright install and finishes in seconds; it is also the only job
    that installs anything outside the test-runtime lock (§11).
-3. **PR Smoke** (`pull_request` only) — the framework's own tests (`tests/test_*.py`, fast, no
+3. **Installed Package** — `python scripts/verify_installed_package.py`. Every trigger. Builds a
+   real wheel, reads its archive manifest, installs it with its declared dependencies into a
+   clean `python -m venv`, generates a separate consumer project and runs everything from there
+   with this source tree nowhere on the path (§12). It installs nothing beforehand - the script
+   is standard-library only, and the point is that the wheel's own metadata must suffice - and it
+   consumes no other job's output, so it runs alone in a fresh environment. Without it the
+   packaging checks existed but nothing ran them: a `pyproject.toml` edit could break the
+   distribution while every other job stayed green.
+4. **PR Smoke** (`pull_request` only) — the framework's own tests (`tests/test_*.py`, fast, no
    browser) plus `-m "smoke and not production"`, Chromium only. Deliberately narrow: full
    regression coverage belongs to the jobs below, not to every PR.
-4. **Regression** (push to `main`/`dev`, nightly, manual dispatch) — the full suite, Chromium,
+5. **Regression** (push to `main`/`dev`, nightly, manual dispatch) — the full suite, Chromium,
    `pytest -m "not production" -n auto`.
-5. **Cross-Browser** (nightly, or manual dispatch with the `cross_browser` input) — the full suite
+6. **Cross-Browser** (nightly, or manual dispatch with the `cross_browser` input) — the full suite
    against Firefox and WebKit, as a matrix. Not run on every PR — it roughly triples runtime for
    coverage most changes don't need.
-6. **Quarantined (non-blocking)** — `pytest -m "quarantined and not production"`, with
+7. **Quarantined (non-blocking)** — `pytest -m "quarantined and not production"`, with
    `continue-on-error: true`, so known-unstable tests still run and still report without
    gating anything. See "Quarantined tests" below.
 
@@ -828,7 +836,9 @@ nothing in `pwpf/` may assume the framework sits at the root of the project unde
   the packaged schema. The manifest half is deliberately about the artifact rather than the
   configuration that produced it: `include = ["pwpf*"]` *should* keep `apps/`, `tests/`, `docs/`,
   the prompt library and the root `conftest.py` out of the wheel, but only the zip says whether
-  it did, and `tests/test_wheel_contents.py` checks those assertions fail when they should.
+  it did, and `tests/test_wheel_contents.py` checks those assertions fail when they should. CI
+  runs the script on every trigger as the **Installed Package** job (§8), so this is a gate
+  rather than a thing somebody remembers to run.
 
 ## Adding a New Application
 
