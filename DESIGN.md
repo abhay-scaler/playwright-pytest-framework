@@ -193,7 +193,10 @@ A single test run goes through these stages:
    *And when not at all*: with no `--alluredir` nothing is written, so nothing is cleaned — a
    guessed directory would delete a previous run's results that this run is not going to replace
    — and a directory that is, or contains, the project root or the invocation directory is
-   refused with a logged diagnostic rather than cleaned.
+   refused with a logged diagnostic rather than cleaned. Those boundaries are compared as
+   *resolved* paths, so a symlink cannot disguise one, and a file that will not delete is
+   logged and stepped over: housekeeping must never be the thing that ends a run, which is
+   what an unguarded `OSError` in `pytest_configure` had been.
    At the end of the session, `pytest_terminal_summary` post-processes the pytest-html report,
    embedding any failure screenshots from *this* run directly into the file — recursively, so
    per-app subdirectories are found, and namespaced (`<app>__<test>.png`) so two apps'

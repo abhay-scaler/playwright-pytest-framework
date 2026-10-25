@@ -27,6 +27,7 @@ HOME, no network and no browser.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
@@ -42,6 +43,7 @@ from pwpf.config import paths
 from pwpf.config.paths import PROJECT_MARKER, ROOT_ENV_VAR, project_root, set_project_root
 from pwpf.config.settings import allure_results_dir
 from pwpf.plugin import _allure_results_dir, _unsafe_to_clean
+from pwpf.utils import allure_cleanup
 from pwpf.utils.allure_cleanup import clean_allure_results
 
 FRAMEWORK_ROOT = project_root()
@@ -55,6 +57,32 @@ def _restore_pinned_roots():
     caller, session = paths._caller_root, paths._pytest_root
     yield
     paths._caller_root, paths._pytest_root = caller, session
+
+
+@pytest.fixture
+def cleanup_log():
+    """The cleanup module's own log records. Its logger does not propagate, so
+    `caplog` sees nothing - a handler of our own is the way to read it."""
+    messages: list[str] = []
+
+    class Collect(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            messages.append(record.getMessage())
+
+    logger = logging.getLogger(allure_cleanup.__name__)
+    handler = Collect()
+    logger.addHandler(handler)
+    yield messages
+    logger.removeHandler(handler)
+
+
+def _require_symlinks(tmp_path: Path) -> None:
+    probe = tmp_path / "symlink-probe"
+    try:
+        probe.symlink_to(tmp_path)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"symlinks cannot be created here: {error}")
+    probe.unlink()
 
 
 def _artifact(directory: Path, kind: str = "result.json") -> Path:
@@ -152,6 +180,49 @@ def test_clean_allure_results_touches_nothing_outside_the_directory_it_is_given(
     assert not stale.exists()
     assert kept_sibling.is_file()
     assert loose_file.is_file()
+
+
+def test_a_deletion_that_fails_is_reported_and_the_rest_still_proceeds(
+    tmp_path, monkeypatch, cleanup_log
+):
+    """Housekeeping must not end a run: one artefact that cannot be removed is
+    logged and skipped, and the others are still cleared. The failure is
+    injected rather than staged with permission bits, which prove nothing when
+    the tests run as root."""
+    results_dir = tmp_path / "allure-results"
+    doomed = _artifact(results_dir, "result.json")
+    removable = _artifact(results_dir, "container.json")
+    real_unlink = Path.unlink
+
+    def unlink(self, *args, **kwargs):
+        if self.name == doomed.name:
+            raise PermissionError(13, "Permission denied")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", unlink)
+
+    removed = clean_allure_results(results_dir)
+
+    assert removed == 1
+    assert doomed.is_file(), "the undeletable artefact should simply be left alone"
+    assert not removable.exists(), "a later artefact was skipped after the failure"
+    assert [m for m in cleanup_log if "Could not remove the stale Allure result" in m]
+    assert [m for m in cleanup_log if "could not be removed" in m]
+
+
+def test_a_results_directory_that_cannot_be_read_is_reported_not_raised(
+    tmp_path, monkeypatch, cleanup_log
+):
+    results_dir = tmp_path / "allure-results"
+    results_dir.mkdir()
+
+    def iterdir(self):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+
+    assert clean_allure_results(results_dir) == 0
+    assert [m for m in cleanup_log if "Could not read the Allure results directory" in m]
 
 
 def test_called_without_a_directory_it_uses_the_project_root_convention(tmp_path):
@@ -308,6 +379,35 @@ def test_a_directory_above_the_project_is_refused(tmp_path):
     assert "contains" in reason
 
 
+def test_a_symlink_to_the_project_root_is_refused(tmp_path):
+    """`--alluredir=link` with `link -> .`: `os.path.abspath` normalises `..`
+    but not symlinks, so the apparent path looked like a dedicated
+    subdirectory while being the project root itself."""
+    _require_symlinks(tmp_path)
+    root = tmp_path / "consumer"
+    root.mkdir()
+    (root / "selflink").symlink_to(root)
+
+    reason = _unsafe_to_clean(root / "selflink", _config("selflink", root, rootpath=root))
+
+    assert reason is not None, "a symlink to the project root slipped past the boundary check"
+
+
+def test_a_real_subdirectory_reached_through_a_symlink_is_still_safe(tmp_path):
+    """The other side of resolving: a genuine results directory that happens to
+    be reached through a link is a dedicated directory, and stays cleanable."""
+    _require_symlinks(tmp_path)
+    root = tmp_path / "consumer"
+    (root / "reports" / "allure-results").mkdir(parents=True)
+    (root / "link").symlink_to(root / "reports")
+
+    reason = _unsafe_to_clean(
+        root / "link" / "allure-results", _config("link/allure-results", root, rootpath=root)
+    )
+
+    assert reason is None
+
+
 def test_the_project_root_is_refused_even_from_a_subdirectory(tmp_path):
     root = tmp_path / "consumer"
     subdirectory = root / "tests"
@@ -364,6 +464,15 @@ def _run_from(
         capture_output=True,
         text=True,
         timeout=300,
+    )
+
+
+def _framework_log(root: Path) -> str:
+    """The framework's own log from a consumer run. The plugin's diagnostics are
+    emitted during `pytest_configure`, while pytest's output capture is in
+    place, so the log file is where they reliably land."""
+    return "".join(
+        log.read_text(encoding="utf-8") for log in (root / "logs").rglob("framework.log")
     )
 
 
@@ -433,16 +542,75 @@ def test_an_alluredir_of_the_invocation_directory_is_refused_with_a_diagnostic(t
     assert stale_shaped_like_allure.is_file(), "the invocation directory was cleaned anyway"
     assert unrelated.is_file()
     assert (root / PROJECT_MARKER).is_file()
-    # The diagnostic is looked for in the framework's own log rather than the
-    # terminal: this runs in `pytest_configure`, while pytest's output capture
-    # is in place, so the log file is where it reliably lands.
-    logs = "".join(
-        log.read_text(encoding="utf-8") for log in (root / "logs").rglob("framework.log")
-    )
+    logs = _framework_log(root)
     diagnostics = logs + result.stdout + result.stderr
     refusal = re.search(r"Not clearing stale Allure results", diagnostics)
     assert refusal, f"no diagnostic explaining the refusal\n{diagnostics}"
     assert "it is the project root" in logs or "invoked from" in logs, logs
+
+
+def test_a_symlinked_alluredir_cannot_clean_the_project_root(tmp_path):
+    """The boundary check through a real run: `--alluredir=selflink` where the
+    link points at the project root. Against the string-only comparison this
+    deleted an Allure-shaped file from the root without a word."""
+    pytest.importorskip("allure_pytest", reason="allure-pytest is not installed")
+    _require_symlinks(tmp_path)
+    root = _consumer(tmp_path, "--alluredir=selflink")
+    (root / "selflink").symlink_to(root)
+    protected = _artifact(root)
+    unrelated = root / "keep.txt"
+    unrelated.write_text("keep", encoding="utf-8")
+
+    result = _run_from(root, home=tmp_path / "home")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert protected.is_file(), (
+        "an Allure-shaped file in the project root was deleted through a symlinked "
+        "--alluredir, which the boundary check exists to prevent"
+    )
+    assert unrelated.is_file()
+    assert (root / PROJECT_MARKER).is_file()
+    logs = _framework_log(root)
+    assert "Not clearing stale Allure results" in logs, logs
+    assert "it is the project root" in logs, logs
+
+
+def test_a_cleanup_failure_does_not_stop_collection_or_execution(tmp_path):
+    """The cleanup runs in `pytest_configure`, so an unhandled filesystem error
+    there killed the session with an INTERNALERROR before a single test was
+    collected. The failure is injected in the consumer's own conftest - a
+    deterministic fault, not permission bits that root would ignore."""
+    pytest.importorskip("allure_pytest", reason="allure-pytest is not installed")
+    root = _consumer(tmp_path, "--alluredir=results")
+    # Fails only for the files the cleanup is allowed to touch, so nothing else
+    # in the subprocess is affected.
+    (root / "conftest.py").write_text(
+        "import pathlib\n"
+        "\n"
+        "_real_unlink = pathlib.Path.unlink\n"
+        "\n"
+        "\n"
+        "def _unlink(self, *args, **kwargs):\n"
+        '    if self.name.endswith(("-result.json", "-container.json")):\n'
+        '        raise PermissionError(13, "injected failure")\n'
+        "    return _real_unlink(self, *args, **kwargs)\n"
+        "\n"
+        "\n"
+        "pathlib.Path.unlink = _unlink\n"
+        "\n"
+        'pytest_plugins = ["pwpf.plugin"]\n',
+        encoding="utf-8",
+    )
+    undeletable = _artifact(root / "results")
+
+    result = _run_from(root, home=tmp_path / "home")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "INTERNALERROR" not in result.stdout + result.stderr
+    assert "1 passed" in result.stdout, result.stdout
+    assert undeletable.is_file(), "the injected failure should have left the file in place"
+    logs = _framework_log(root)
+    assert "Could not remove the stale Allure result" in logs, logs
 
 
 def test_a_run_without_alluredir_clears_nothing(tmp_path):

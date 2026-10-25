@@ -53,12 +53,40 @@ def clean_allure_results(results_dir: str | Path | None = None) -> int:
     if not results_dir.is_dir():
         return 0
 
+    # Clearing stale results is housekeeping, and housekeeping must not be able
+    # to end a test run. Before this was guarded, one unwritable results
+    # directory - a CI volume, a directory owned by another user - raised out of
+    # `pytest_configure` and the session died with an INTERNALERROR before
+    # collecting anything. Each failure is now reported and the rest proceeds;
+    # `OSError` only, so a bug in this module still surfaces as a crash.
+    try:
+        entries = sorted(results_dir.iterdir())
+    except OSError as error:
+        LOGGER.warning("Could not read the Allure results directory %s: %s", results_dir, error)
+        return 0
+
     removed = 0
-    for entry in sorted(results_dir.iterdir()):
-        if entry.is_file() and ALLURE_ARTIFACT.match(entry.name):
+    failed = 0
+    for entry in entries:
+        if not (entry.is_file() and ALLURE_ARTIFACT.match(entry.name)):
+            continue
+        try:
+            # unlink, never rmtree: for a symlink this removes the link and
+            # leaves whatever it pointed at alone.
             entry.unlink()
-            removed += 1
+        except OSError as error:
+            failed += 1
+            LOGGER.warning("Could not remove the stale Allure result %s: %s", entry, error)
+            continue
+        removed += 1
 
     if removed:
         LOGGER.info("Cleared %d stale Allure result file(s) from %s", removed, results_dir)
+    if failed:
+        LOGGER.warning(
+            "Left %d stale Allure result file(s) in %s that could not be removed; "
+            "this run's results will be mixed with them",
+            failed,
+            results_dir,
+        )
     return removed

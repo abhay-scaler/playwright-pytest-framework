@@ -114,6 +114,18 @@ def _allure_results_dir(config: pytest.Config) -> Path | None:
     return _configured_path(config, "allure_report_dir")
 
 
+def _resolved(path: Path | str) -> Path:
+    """The real directory a path names, symlinks and all.
+
+    `resolve()` rather than `os.path.abspath`, and only for the comparisons
+    below: abspath normalises `..` but not symlinks, so `--alluredir=link` with
+    `link -> .` looked like a dedicated subdirectory while being the project
+    root. Non-strict, because the results directory often does not exist yet -
+    the existing ancestors resolve and the rest is appended.
+    """
+    return Path(path).resolve()
+
+
 def _unsafe_to_clean(results_dir: Path, config: pytest.Config) -> str | None:
     """Why this directory must not be cleaned automatically, or None if it may be.
 
@@ -121,19 +133,18 @@ def _unsafe_to_clean(results_dir: Path, config: pytest.Config) -> str | None:
     `--alluredir=.` cannot empty a working tree. These boundaries are the second
     line: a results directory that *is* the project root or the invocation
     directory, or that contains either, is being shared with the project's own
-    files, and no unattended cleanup belongs there.
+    files, and no unattended cleanup belongs there - however the path is
+    spelled, which is why both sides are resolved before being compared.
     """
+    target = _resolved(results_dir)
     boundaries = (
-        ("the project root", Path(os.path.abspath(config.rootpath))),
-        (
-            "the directory pytest was invoked from",
-            Path(os.path.abspath(config.invocation_params.dir)),
-        ),
+        ("the project root", _resolved(config.rootpath)),
+        ("the directory pytest was invoked from", _resolved(config.invocation_params.dir)),
     )
     for name, boundary in boundaries:
-        if results_dir == boundary:
+        if target == boundary:
             return f"it is {name}"
-        if boundary.is_relative_to(results_dir):
+        if boundary.is_relative_to(target):
             return f"it contains {name}"
     return None
 
