@@ -20,6 +20,12 @@ own line. Nothing in the repository is modified: the only writes are to a
 temporary directory, plus the `build/`-style droppings the wheel build leaves
 behind, which are removed again unless they were already there.
 
+It also tests the *dependency contract*, not just the code: the consumer
+environment is built from the distribution's own extras (`[ai,report]`) plus the
+one dependency that is genuinely the consumer's (`pytest-xdist`, for `-n auto`),
+and a second, base-only environment proves the extras are load-bearing by being
+rejected by this repository's `pytest.ini`.
+
 What it deliberately does not do: publish anything, create a repository, change
 where this project gets its framework from, or run the live-site `production`
 tests. The selection expressions are the repository's own, exclusions included.
@@ -56,12 +62,18 @@ CONSUMER_TEST_SUITES = (
 )
 CONSUMER_FILES = ("pytest.ini",)
 
-# This repository's own pytest.ini asks for an HTML report and xdist, which the
-# framework does not declare (they are in its `dev` extra, being development
-# tooling rather than something every consumer needs). A consumer that keeps
-# this pytest.ini owns those two dependencies - installing them here is part of
-# what the dry run is measuring, not a workaround.
-CONSUMER_OWNED_DEPENDENCIES = ("pytest-html", "pytest-xdist")
+# The dependency contract, installed as a consumer would read it off the
+# distribution rather than as a hand-written list:
+#
+#   framework extras   `[ai]` for the catalog validator, `[report]` for the
+#                      pytest-html integration this repository's pytest.ini
+#                      asks for with `--html`.
+#   consumer's own     pytest-xdist. Nothing in pwpf/ requires it, so running
+#                      `-n auto` is this project's choice and this project's
+#                      dependency - which is exactly why it is listed here and
+#                      not pulled from an extra.
+FRAMEWORK_EXTRAS = "ai,report"
+CONSUMER_OWNED_DEPENDENCIES = ("pytest-xdist",)
 
 # The selections the repository's CI relies on, as a portability check: they
 # must come out the same in a project that only has the installed plugin.
@@ -125,21 +137,31 @@ def build_wheel(workdir: Path) -> Path:
     return wheels[0]
 
 
-def make_venv(workdir: Path, wheel: Path) -> Path:
-    venv_dir = workdir / "venv"
+def make_venv(
+    workdir: Path,
+    wheel: Path,
+    *,
+    name: str = "venv",
+    extras: str = FRAMEWORK_EXTRAS,
+    consumer_dependencies: tuple[str, ...] = CONSUMER_OWNED_DEPENDENCIES,
+) -> Path:
+    """A clean environment with the distribution installed exactly as the
+    documented contract says to install it. `extras=""` gives the base install,
+    which is how the contract gets tested rather than assumed."""
+    venv_dir = workdir / name
     subprocess.run(
         [sys.executable, "-m", "venv", str(venv_dir)], check=True, timeout=INSTALL_TIMEOUT
     )
     python = venv_dir / "bin" / "python"
+    requirement = f"{wheel}[{extras}]" if extras else str(wheel)
     proc = subprocess.run(
-        [str(python), "-m", "pip", "install", "--quiet", f"{wheel}[ai]"]
-        + list(CONSUMER_OWNED_DEPENDENCIES),
+        [str(python), "-m", "pip", "install", "--quiet", requirement] + list(consumer_dependencies),
         capture_output=True,
         text=True,
         timeout=INSTALL_TIMEOUT,
     )
     if proc.returncode != 0:
-        raise SystemExit(f"wheel install failed:\n{proc.stdout}\n{proc.stderr}")
+        raise SystemExit(f"wheel install failed ({requirement}):\n{proc.stdout}\n{proc.stderr}")
     return venv_dir
 
 
@@ -401,6 +423,29 @@ def main(argv: list[str] | None = None) -> int:
             and f"{len(catalogs)} file(s) checked under {consumer.resolve()}" in proc.stdout,
             "scenario-catalog validation passes in the consumer context",
             f"expected {len(catalogs)} catalog file(s)\n{proc.stdout}\n{proc.stderr}",
+        )
+
+        # 9. The dependency contract itself: the extras are not decoration. A
+        #    base install of the same distribution, running the same consumer
+        #    project, must fail on the `--html` its pytest.ini asks for - which
+        #    is what makes `[report]` a contract rather than a suggestion.
+        check(
+            (consumer / "reports" / "pytest_report.html").is_file(),
+            "the pytest-html integration engaged under the [report] extra",
+            str(sorted(p.name for p in (consumer / "reports").iterdir())),
+        )
+        base_venv = make_venv(workdir, wheel, name="venv-base", extras="", consumer_dependencies=())
+        proc = run(
+            [str(base_venv / "bin" / "python"), "-m", "pytest", "--collect-only", "-q"],
+            consumer,
+            consumer_env(base_venv),
+            timeout=180,
+        )
+        output = proc.stdout + proc.stderr
+        check(
+            proc.returncode == 4 and "--html" in output and "unrecognized arguments" in output,
+            "a base install (no extras) is rejected by this consumer's pytest.ini, as documented",
+            f"returncode {proc.returncode}\n{output[-500:]}",
         )
 
         failed = [description for ok, description in results if not ok]

@@ -42,13 +42,36 @@ ai = [
     "pyyaml>=6.0",
     "jsonschema>=4.21",
 ]
+# The pytest-html integration. The plugin reads `--html` back from the config
+# and embeds this run's failure screenshots into the report it names
+# (pwpf/plugin.py, pwpf/utils/report_embedder.py) - code whose only purpose is
+# to work with pytest-html, which is why the framework names the dependency
+# instead of leaving a consumer to deduce it. Optional because the framework is
+# complete without it: with no `--html` the embed step logs that there was no
+# report and the run is otherwise unaffected (verified, and pinned by
+# tests/test_report_path.py).
+#
+# A consumer whose pytest.ini *asks* for `--html` needs this: pytest rejects an
+# option no installed plugin defines with a usage error before collection, so
+# the alternative to naming it here is a consumer discovering it from
+# `error: unrecognized arguments: --html=...`.
+#
+# pytest-xdist is deliberately *not* here. Nothing in pwpf/ requires it - the
+# `config.workerinput` guards and the worker id in the log path are defensive
+# and behave the same either way - so parallel execution is the consumer's
+# choice and the consumer's dependency.
+report = [
+    "pytest-html>=4.0.0",
+]
 # What this repository uses to develop and check the framework; mirrors
-# requirements.in. Not needed to *use* the framework.
+# requirements.in. Not needed to *use* the framework. It takes `report` rather
+# than repeating the floor, and adds xdist because this repository's own CI
+# runs `-n auto`.
 dev = [
+    "playwright-pytest-framework[report]",
     "black>=24.0.0",
     "ruff>=0.6.0",
     "mypy>=1.11.0",
-    "pytest-html>=4.0.0",
     "pytest-xdist>=3.0.0",
 ]
 
